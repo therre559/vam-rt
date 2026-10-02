@@ -6,4 +6,6 @@ set "REPO=%~dp0.."
 copy /Y "%REPO%\server\*.py" "%ARDY_SCRIPTS%\"
 copy /Y "%REPO%\server\verified_prompts.json" "%ARDY_SCRIPTS%\" 2>nul
 copy /Y "%REPO%\plugin\legacy\BVHPlayer_autoreload.cs" "%VAM_SCRIPTS%\"
+if not exist "%VAM_SCRIPTS%\VaMRT" mkdir "%VAM_SCRIPTS%\VaMRT"
+copy /Y "%REPO%\plugin\VaMRT\*.cs" "%VAM_SCRIPTS%\VaMRT\"
 echo Done.
