@@ -17,3 +17,4 @@ ardy_request.json
 # Local settings / secrets
 .env
 *.local.bat
+*.zip
