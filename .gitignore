@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+# Generated motion + runtime files
+*.bvh
+*.npz
+metrics.tsv
+prompt.txt
+ardy_request.json
+*.log
+# Third-party packages and models: do not redistribute
+*.var
+*.safetensors
+*.pt
+*.ckpt
+*.onnx
+# Local settings / secrets
+.env
+*.local.bat
