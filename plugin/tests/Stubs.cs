@@ -11,6 +11,7 @@ namespace UnityEngine
         public float x, y, z;
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
         public static Vector3 up { get { return new Vector3(0, 1, 0); } }
+        public static Vector3 down { get { return new Vector3(0, -1, 0); } }   // standard Unity
         public static Vector3 forward { get { return new Vector3(0, 0, 1); } }
         public float magnitude { get { return (float)Math.Sqrt(x * x + y * y + z * z); } }
         public float sqrMagnitude { get { return x * x + y * y + z * z; } }
@@ -55,6 +56,7 @@ namespace UnityEngine
         public Transform transform { get { if (_t == null) _t = (this as Transform) ?? new Transform(); return _t; } }
         public GameObject gameObject { get { if (_g == null) _g = new GameObject(); return _g; } }
         public T GetComponent<T>() { return default(T); }
+        public T GetComponentInParent<T>() { return default(T); }                // standard Unity
     }
     public class GameObject : Object
     {
@@ -66,14 +68,30 @@ namespace UnityEngine
     {
         public Vector3 position, forward, right, up;
         public Transform Find(string n) { return null; }
+        public bool IsChildOf(Transform parent) { return false; }                 // standard Unity
         public IEnumerator GetEnumerator() { return new List<Transform>().GetEnumerator(); }
     }
     public class Camera : Component { }
+    // Physics: the Raycast overload and DefaultRaycastLayers are exactly what VoxtaTouchElite's GazeTracker.cs calls
+    public enum QueryTriggerInteraction { UseGlobal, Ignore, Collide }
+    public class Collider : Component { public bool isTrigger; }
+    public struct RaycastHit { public Collider collider; public Vector3 point; public float distance; }
+    public static class Physics
+    {
+        public const int DefaultRaycastLayers = -5;
+        public static bool Raycast(Vector3 origin, Vector3 direction, out RaycastHit hit, float maxDistance, int layerMask, QueryTriggerInteraction q)
+        { hit = default(RaycastHit); return false; }
+    }
     public class MonoBehaviour : Component { public Coroutine StartCoroutine(IEnumerator e) { return null; } }
     public class Coroutine { }
     public static class Time { public static float time; public static float deltaTime; }
 }
 
+public class JSONStorableAction     // MacGruber_Utils.cs Utils.SetupAction; Voxta TimelineIntegration.cs (actionCallback)
+{
+    public delegate void ActionCallback();
+    public JSONStorableAction(string name, ActionCallback callback) { }
+}
 public class JSONStorableString
 {
     public string val; public string valNoCallback; public Action<string> setCallbackFunction;
@@ -91,6 +109,7 @@ public class JSONStorableFloat
 }
 public class JSONStorableStringChooser
 {
+    public List<string> choices = new List<string>();                            // Voxta tabs: chooser.choices = ...
     public string val; public Action<string> setCallbackFunction;
     public JSONStorableStringChooser(string name, List<string> options, string startingValue, string displayName) { val = startingValue; }
 }
@@ -100,6 +119,10 @@ public class JSONStorable : UnityEngine.MonoBehaviour
     public JSONStorableStringChooser GetStringChooserJSONParam(string n) { return null; }
     public string GetStringChooserParamValue(string n) { return ""; }
     public JSONStorableBool GetBoolJSONParam(string n) { return null; }
+    // Every member below must have been seen in a plugin that runs in VaM. Sources are noted so this stays honest.
+    public JSONStorableFloat GetFloatJSONParam(string n) { return null; }        // Glance: storable.GetFloatJSONParam("Weight").val
+    public List<string> GetActionNames() { return new List<string>(); }         // Voxta TimelineIntegration.cs
+    public void CallAction(string name) { }                                      // Voxta TriggerInvoker.cs
 }
 public class FreeControllerV3 : JSONStorable { }
 public class MVRPluginManager : JSONStorable { }
@@ -107,6 +130,7 @@ public class Atom : UnityEngine.MonoBehaviour
 {
     public string uid; public string type; public bool on; public FreeControllerV3 mainController;
     public JSONStorable GetStorableByID(string id) { return null; }
+    public List<string> GetStorableIDs() { return new List<string>(); }          // Voxta TimelineIntegration.cs
 }
 public class CameraTarget { public UnityEngine.Camera targetCamera; }
 public class SuperController : UnityEngine.MonoBehaviour
@@ -132,6 +156,7 @@ public class MVRScript : JSONStorable
 {
     public Atom containingAtom;
     public virtual void Init() { }
+    public void RegisterAction(JSONStorableAction a) { }                         // MacGruber_Utils.cs Utils.SetupAction
     public UIDynamicTextField CreateTextField(JSONStorableString s, bool rightSide = false) { return new UIDynamicTextField(); }
     public UIDynamicButton CreateButton(string label, bool rightSide = false) { return new UIDynamicButton(); }
     public UIDynamicSlider CreateSlider(JSONStorableFloat s, bool rightSide = false) { return new UIDynamicSlider(); }

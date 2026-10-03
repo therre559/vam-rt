@@ -1,5 +1,5 @@
 // =============================================================================
-// VaM-RT Senses  v0.1.2
+// VaM-RT Senses  v0.4.0
 // =============================================================================
 // Part of the VaM-RT project: https://github.com/therre559/vam-rt
 // License: to be decided before the first public release (see the repository).
@@ -13,6 +13,11 @@
 //   The text is shown in this plugin's panel and, if you switch it on, written to a
 //   Voxta "Context (Slot N)" field so the LLM knows about her surroundings.
 //   It only updates the slot when the description really changes.
+//   It can also send events to Voxta (approach, leave, stare), run "reactions" (call an action of any
+//   plugin when the user approaches, leaves or stares, e.g. play a Timeline clip), and read the mood
+//   from the E-Motion plugin when it is loaded on the same atom.
+//   Follow (dry run): checks the distance to the user, obstacles, ground and an allowed area, and REPORTS what she would
+//   do to stay within reach. Nothing is sent and she does not move yet.
 //
 // Tagging atoms (optional): put tags in square brackets in the atom's name, e.g.
 //   "Armchair [sit]"   can be sat on        "Desk [surface]"  a surface
@@ -40,12 +45,39 @@ namespace VaMRT
     // -------------------------------------------------------------------------
     public class Senses : MVRScript
     {
-        private const string VERSION = "0.1.2";
+        private const string VERSION = "0.4.0";
+        private const string DeliverySlot = "Context slot";
+        private const string DeliverySecret = "Hidden chat message";
 
         // settings (saved with the scene)
-        private JSONStorableBool _enabled, _sendToVoxta;
-        private JSONStorableStringChooser _slot;
-        private JSONStorableFloat _radius, _maxObjects, _interval;
+        private JSONStorableBool _enabled, _sendToVoxta, _onlyTagged, _sendEvents;
+        private JSONStorableStringChooser _slot, _delivery;
+        private JSONStorableFloat _radius, _maxObjects, _interval, _gazeCone, _wideSpread;
+        private JSONStorableFloat _approach, _leave, _stare, _eventCooldown, _quietSeconds;
+        private float _lastBusyTime = -100f;
+        private bool _voxtaWasReady;
+        private readonly Presence _presence = new Presence();
+        // reactions for scene creators (call a plugin action), and the optional E-Motion mood
+        private const string NoneChoice = "(none)";
+        private class Reaction
+        {
+            public string Key, Title;
+            public JSONStorableStringChooser Atom, Receiver, Action;
+        }
+        private readonly List<Reaction> _reactions = new List<Reaction>();
+        private JSONStorableBool _fireTriggers, _useEMotion;
+        private JSONStorableFloat _triggerCooldown;
+        private readonly Presence _presenceTrig = new Presence();
+        private string _lastTriggerText = "none yet";
+        private MVRScript _emotion;
+        // follow (dry run)
+        private JSONStorableBool _followOn, _followGround;
+        private JSONStorableFloat _followMin, _followMax, _followPref, _followSpeed, _followArea;
+        private JSONStorableString _followText;
+        private float _anchorX, _anchorZ;
+        private bool _hasAnchor;
+        private float _emotionCheckTime = -100f;
+        private string _lastEventText = "none yet";
         // read-only displays
         private JSONStorableString _snapshotText, _statusText, _debugText, _errorText;
 
@@ -68,7 +100,7 @@ namespace VaMRT
         private string _lastErrorShown = "";
         private bool _spawning;
 
-        private static readonly string[] IgnoredTypeParts = new string[] { "CoreControl", "Light", "Camera", "Audio", "PluginManager", "SessionPlugin" };
+        private static readonly string[] IgnoredTypeParts = new string[] { "CoreControl", "Light", "Camera", "Audio", "PluginManager", "SessionPlugin", "NavigationPanel" };
 
         private class PropSpec
         {
@@ -100,12 +132,56 @@ namespace VaMRT
                 RegisterBool(_sendToVoxta);
                 _slot = new JSONStorableStringChooser("Context slot", new List<string> { "1", "2", "3", "4" }, "4", "Context slot");
                 RegisterStringChooser(_slot);
+                _delivery = new JSONStorableStringChooser("Delivery", new List<string> { DeliverySlot, DeliverySecret }, DeliverySlot, "Delivery");
+                RegisterStringChooser(_delivery);
                 _radius = new JSONStorableFloat("Radius (m)", 6f, 1f, 20f);
                 RegisterFloat(_radius);
                 _maxObjects = new JSONStorableFloat("Max objects reported", 6f, 1f, 12f);
                 RegisterFloat(_maxObjects);
                 _interval = new JSONStorableFloat("Min seconds between sends", 3f, 1f, 30f);
                 RegisterFloat(_interval);
+                _onlyTagged = new JSONStorableBool("Only report tagged objects and people", false);
+                RegisterBool(_onlyTagged);
+                _gazeCone = new JSONStorableFloat("Looking-at cone (degrees)", 12f, 3f, 45f);
+                RegisterFloat(_gazeCone);
+                _wideSpread = new JSONStorableFloat("Wide-stance foot spread (m)", 0.55f, 0.3f, 1.2f);
+                RegisterFloat(_wideSpread);
+                _sendEvents = new JSONStorableBool("Send events (approach, leave, stare)", false);
+                RegisterBool(_sendEvents);
+                _approach = new JSONStorableFloat("Approach distance (m)", 2.5f, 1f, 6f);
+                RegisterFloat(_approach);
+                _leave = new JSONStorableFloat("Leave distance (m)", 8f, 3f, 20f);
+                RegisterFloat(_leave);
+                _stare = new JSONStorableFloat("Stare seconds", 6f, 2f, 30f);
+                RegisterFloat(_stare);
+                _eventCooldown = new JSONStorableFloat("Seconds between events", 45f, 10f, 300f);
+                RegisterFloat(_eventCooldown);
+                _quietSeconds = new JSONStorableFloat("Quiet time before an event (s)", 10f, 3f, 60f);
+                RegisterFloat(_quietSeconds);
+
+                _fireTriggers = new JSONStorableBool("Run reactions (approach, leave, stare)", true);
+                RegisterBool(_fireTriggers);
+                _triggerCooldown = new JSONStorableFloat("Seconds between reactions", 10f, 2f, 120f);
+                RegisterFloat(_triggerCooldown);
+                _useEMotion = new JSONStorableBool("Include E-Motion mood", true);
+                RegisterBool(_useEMotion);
+
+                _followOn = new JSONStorableBool("Follow (dry run: only reports)", false);
+                RegisterBool(_followOn);
+                _followOn.setCallbackFunction += (bool v) => { if (!v) _hasAnchor = false; };
+                _followMax = new JSONStorableFloat("Follow: start walking when farther than (m)", 2.5f, 1f, 8f);
+                RegisterFloat(_followMax);
+                _followMin = new JSONStorableFloat("Follow: stay put when closer than (m)", 0.8f, 0.3f, 3f);
+                RegisterFloat(_followMin);
+                _followPref = new JSONStorableFloat("Follow: walk to a point this far from you (m)", 1.8f, 0.5f, 4f);
+                RegisterFloat(_followPref);
+                _followSpeed = new JSONStorableFloat("Follow: walking speed (m/s)", 1.2f, 0.5f, 1.6f);
+                RegisterFloat(_followSpeed);
+                _followArea = new JSONStorableFloat("Follow: allowed area radius (m)", 6f, 1f, 30f);
+                RegisterFloat(_followArea);
+                _followGround = new JSONStorableBool("Follow: require ground ahead", true);
+                RegisterBool(_followGround);
+                _followText = new JSONStorableString("Follow report", "Follow is off.");
 
                 _snapshotText = new JSONStorableString("Snapshot", "(waiting for the first reading)");
                 _statusText = new JSONStorableString("Status", "");
@@ -115,6 +191,22 @@ namespace VaMRT
                 _enabled.setCallbackFunction += (bool v) => { if (!v) ClearSlot(); };
                 _sendToVoxta.setCallbackFunction += (bool v) => { if (!v) ClearSlot(); else _lastSentText = ""; };
                 _slot.setCallbackFunction += (string s) => { ClearSlot(); };
+                _delivery.setCallbackFunction += (string s) => { ClearSlot(); };
+                _sendEvents.setCallbackFunction += (bool v) => { _presence.ResetAll(); };
+
+                // actions other plugins (and our own reactions) can call
+                RegisterAction(new JSONStorableAction("Send snapshot now", ForceSend));
+                RegisterAction(new JSONStorableAction("Calibrate standing height", Calibrate));
+                RegisterAction(new JSONStorableAction("Start follow (dry run)", delegate { _followOn.val = true; }));
+                RegisterAction(new JSONStorableAction("Stop follow (dry run)", delegate { _followOn.val = false; }));
+                RegisterAction(new JSONStorableAction("Fire On Approach", delegate { FireTrigger("approach"); }));
+                RegisterAction(new JSONStorableAction("Fire On Leave", delegate { FireTrigger("leave"); }));
+                RegisterAction(new JSONStorableAction("Fire On Stare", delegate { FireTrigger("stare"); }));
+
+                // reactions: for each event pick an atom, one of its plugins and one of that plugin's actions
+                AddReaction("approach", "On Approach");
+                AddReaction("leave", "On Leave");
+                AddReaction("stare", "On Stare");
 
                 BuildUI();
                 _ready = true;
@@ -158,10 +250,46 @@ namespace VaMRT
 
             CreateToggle(_enabled, false).height = 50f;
             CreateToggle(_sendToVoxta, false).height = 50f;
+            CreateScrollablePopup(_delivery, false);
             CreateScrollablePopup(_slot, false);
             CreateSlider(_radius, false);
             CreateSlider(_maxObjects, false);
             CreateSlider(_interval, false);
+            CreateToggle(_onlyTagged, false).height = 50f;
+            CreateSlider(_gazeCone, false);
+            CreateSlider(_wideSpread, false);
+            CreateSpacer(false).height = 10f;
+            CreateToggle(_sendEvents, false).height = 50f;
+            CreateSlider(_approach, false);
+            CreateSlider(_leave, false);
+            CreateSlider(_stare, false);
+            CreateSlider(_eventCooldown, false);
+            CreateSlider(_quietSeconds, false);
+            CreateSpacer(false).height = 10f;
+            CreateToggle(_fireTriggers, false).height = 50f;
+            CreateSlider(_triggerCooldown, false);
+            CreateButton("Refresh atom and plugin lists", false).button.onClick.AddListener(delegate { RefreshAllReactions(); });
+            foreach (Reaction r in _reactions)
+            {
+                Reaction rr = r;
+                JSONStorableString label = new JSONStorableString(rr.Title + " label", rr.Title + ": call this action");
+                CreateTextField(label, false).height = 40f;
+                CreateScrollablePopup(rr.Atom, false);
+                CreateScrollablePopup(rr.Receiver, false);
+                CreateScrollablePopup(rr.Action, false);
+                CreateButton("Test: " + rr.Title, false).button.onClick.AddListener(delegate { FireTrigger(rr.Key); });
+            }
+            CreateToggle(_useEMotion, false).height = 50f;
+            CreateSpacer(false).height = 10f;
+            CreateToggle(_followOn, false).height = 50f;
+            CreateSlider(_followMax, false);
+            CreateSlider(_followMin, false);
+            CreateSlider(_followPref, false);
+            CreateSlider(_followSpeed, false);
+            CreateSlider(_followArea, false);
+            CreateToggle(_followGround, false).height = 50f;
+            CreateButton("Follow: set the area centre here", false).button.onClick.AddListener(delegate { SetAnchor(); });
+            CreateSpacer(false).height = 10f;
 
             UIDynamicButton sendBtn = CreateButton("Send snapshot now", false);
             sendBtn.button.onClick.AddListener(delegate { ForceSend(); });
@@ -177,6 +305,8 @@ namespace VaMRT
             snap.height = 330f;
             UIDynamicTextField status = CreateTextField(_statusText, true);
             status.height = 110f;
+            UIDynamicTextField follow = CreateTextField(_followText, true);
+            follow.height = 230f;
             UIDynamicTextField debug = CreateTextField(_debugText, true);
             debug.height = 200f;
             UIDynamicTextField err = CreateTextField(_errorText, true);
@@ -251,7 +381,7 @@ namespace VaMRT
 
             SensesLogic.Data d = new SensesLogic.Data();
             d.Pose = SensesLogic.ClassifyPose(hipH, _standHip, torso);
-            d.LegsWide = spread > 0.55f * scale;
+            d.LegsWide = spread > _wideSpread.val * scale;
 
             // the user
             string userDebug = "no camera";
@@ -265,8 +395,70 @@ namespace VaMRT
                 d.UserDistance = toUser.magnitude;
                 d.UserAngle = SensesLogic.SignedAngleY(fwd, toUser);
                 float gaze = Vector3.Angle(cam.transform.forward, headPos - camPos);
-                d.UserLooking = gaze < 20f;
+                d.UserLooking = gaze < _gazeCone.val;
                 userDebug = "user " + d.UserDistance.ToString("0.0") + " m, angle " + d.UserAngle.ToString("0") + ", gaze off-target " + gaze.ToString("0") + " deg";
+            }
+
+            // the mood from E-Motion (read-only: its Valence and Arousal fields are outputs)
+            string emotionDebug = "E-Motion: not used";
+            if (_useEMotion.val)
+            {
+                MVRScript em = FindEMotion();
+                if (em == null) emotionDebug = "E-Motion: not found on this atom";
+                else
+                {
+                    JSONStorableFloat mv = em.GetFloatJSONParam("Valence");
+                    JSONStorableFloat ma = em.GetFloatJSONParam("Arousal");
+                    if (mv != null && ma != null)
+                    {
+                        d.HasMood = true; d.Valence = mv.val; d.Arousal = ma.val;
+                        emotionDebug = "E-Motion: valence " + mv.val.ToString("0.0") + ", arousal " + ma.val.ToString("0.0") +
+                                       " | controls: head " + OnOff(em.GetBoolJSONParam("Control Head")) +
+                                       ", morphs " + OnOff(em.GetBoolJSONParam("Control Morphs")) +
+                                       ", eyes " + OnOff(em.GetBoolJSONParam("Control Eye Target"));
+                    }
+                    else emotionDebug = "E-Motion found, but it has no Valence/Arousal fields";
+                }
+            }
+
+            // VaM triggers: same detection as the Voxta events, but with their own cooldown and no waiting for conversations
+            string triggerDebug = "reactions off";
+            if (_fireTriggers.val && d.HasUser)
+            {
+                string tk = _presenceTrig.Update(Time.time, 0.5f, d.UserDistance, d.UserLooking, true, _approach.val, _leave.val, _stare.val, _triggerCooldown.val);
+                if (tk != null) { FireTrigger(tk); _presenceTrig.Fired(tk, Time.time); }
+                triggerDebug = _presenceTrig.DebugText(Time.time, _stare.val, _triggerCooldown.val);
+            }
+            else if (!_fireTriggers.val)
+            {
+                _presenceTrig.ResetAll();
+            }
+
+            // events: the user walking up, walking away, or staring (only while switched on)
+            // a new chat (Voxta turning ready again) starts from a clean slate: no leftover cooldowns or wording counters
+            bool voxtaReady = FindVoxta() != null;
+            if (voxtaReady && !_voxtaWasReady) _presence.ResetAll();
+            _voxtaWasReady = voxtaReady;
+
+            string presenceDebug = "events off";
+            if (_sendEvents.val && d.HasUser)
+            {
+                bool quiet = VoxtaQuiet();
+                string kind = _presence.Update(Time.time, 0.5f, d.UserDistance, d.UserLooking, quiet, _approach.val, _leave.val, _stare.val, _eventCooldown.val);
+                if (kind != null)
+                {
+                    string evText = _presence.TextFor(kind);
+                    if (SendEvent(evText))
+                    {
+                        _presence.Fired(kind, Time.time);
+                        _lastEventText = DateTime.Now.ToString("HH:mm:ss") + "  " + evText;
+                    }
+                }
+                presenceDebug = _presence.DebugText(Time.time, _stare.val, _eventCooldown.val) + "\nconversation: " + (quiet ? "quiet" : "busy (events wait)");
+            }
+            else if (!_sendEvents.val)
+            {
+                _presence.Reset();
             }
 
             // nearby atoms
@@ -287,10 +479,12 @@ namespace VaMRT
                 bool sit, surface, look, ignore;
                 SensesLogic.ParseTags(a.name, clean, out sit, out surface, out look, out ignore);
                 if (ignore) continue;
+                bool isPerson = a.type == "Person";
+                if (_onlyTagged.val && !isPerson && !sit && !surface && !look) continue;
 
                 SensesLogic.ObjectInfo o = new SensesLogic.ObjectInfo();
                 o.Name = clean;
-                o.IsPerson = a.type == "Person";
+                o.IsPerson = isPerson;
                 o.Distance = dist;
                 o.Angle = SensesLogic.SignedAngleY(fwd, Flat(p - rootPos));
                 o.Sit = sit; o.Surface = surface; o.Look = look;
@@ -300,11 +494,15 @@ namespace VaMRT
             int max = (int)Math.Round(_maxObjects.val);
             for (int i = 0; i < found.Count && i < max; i++) d.Objects.Add(found[i]);
 
+            UpdateFollow(rootPos, fwd, cam != null, cam != null ? cam.transform.position : rootPos, scale);
+
             _debugText.val = "hip height " + hipH.ToString("0.00") + " m (standing reference " + _standHip.ToString("0.00") + ")\n" +
                              "torso angle " + torso.ToString("0") + " deg, foot spread " + spread.ToString("0.00") + " m\n" +
                              "facing x/z " + fwd.x.ToString("0.00") + " / " + fwd.z.ToString("0.00") + "\n" +
                              userDebug + "\n" +
-                             "atoms in range " + found.Count + ", reported " + d.Objects.Count;
+                             "atoms in range " + found.Count + ", reported " + d.Objects.Count + "\n" +
+                             emotionDebug + "\nvoxta events: " + presenceDebug + "\nlast voxta event: " + _lastEventText + "\n" +
+                             "reactions: " + triggerDebug + "\nlast reaction: " + _lastTriggerText;
 
             // accept a new description only once it has been stable for a moment (avoids flicker while moving)
             string text = SensesLogic.Build(d);
@@ -328,6 +526,11 @@ namespace VaMRT
 
             if (_sendToVoxta.val) TrySend(false);
             else _statusText.val = VoxtaStatus(null) + "\nAuto-send is OFF (use 'Send snapshot now' to test).";
+        }
+
+        private static string OnOff(JSONStorableBool b)
+        {
+            return b == null ? "?" : (b.val ? "on" : "off");
         }
 
         private static bool IsIgnoredType(string type)
@@ -389,7 +592,8 @@ namespace VaMRT
         {
             MVRScript p = v ?? FindVoxta();
             if (p == null) return "Voxta: not found, or not connected (its State is 'off').";
-            return "Voxta: found (" + p.containingAtom.name + " > " + p.name + "), context slot " + _slot.val + ".";
+            return "Voxta: found (" + p.containingAtom.name + " > " + p.name + "), " +
+                   (_delivery.val == DeliverySecret ? "delivery: hidden chat message." : "delivery: context slot " + _slot.val + ".");
         }
 
         private void ForceSend()
@@ -408,6 +612,20 @@ namespace VaMRT
             }
             MVRScript v = FindVoxta();
             if (v == null) { _statusText.val = VoxtaStatus(null); return; }
+            if (_delivery.val == DeliverySecret)
+            {
+                // A hidden chat message ("/secret ..."): the AI sees it near the end of the conversation, the user does not,
+                // and it does not trigger a reply. It stays in the chat history, so use a longer interval.
+                JSONStorableString trig = v.GetStringJSONParam("TriggerMessage");
+                if (trig == null) { _statusText.val = "Voxta found, but it has no 'TriggerMessage' field."; return; }
+                trig.valNoCallback = "";
+                trig.val = "/secret " + _lastText.Replace("\r", "").Replace("\n", " ");
+                _lastSentText = _lastText;
+                _lastSendTime = Time.time;
+                _statusText.val = VoxtaStatus(v) + "\nSent as a hidden chat message at " + DateTime.Now.ToString("HH:mm:ss") + ".";
+                return;
+            }
+
             string slotName = "Context (Slot " + _slot.val + ")";
             JSONStorableString slot = v.GetStringJSONParam(slotName);
             if (slot == null) { _statusText.val = "Voxta found, but it has no field '" + slotName + "' (is a character loaded in the Voxta plugin?)."; return; }
@@ -418,6 +636,29 @@ namespace VaMRT
             _lastWrittenSlot = slotName;
             _lastSendTime = Time.time;
             _statusText.val = VoxtaStatus(v) + "\nLast sent at " + DateTime.Now.ToString("HH:mm:ss") + ".";
+        }
+
+        // Events wait while Voxta is listening, thinking or speaking, and for a quiet moment afterwards, so they never
+        // interrupt a conversation. Voxta's plugin reports "off", "idle", "listening", "thinking" or "speaking".
+        private bool VoxtaQuiet()
+        {
+            MVRScript v = FindVoxta();
+            if (v == null) return false;
+            JSONStorableStringChooser st = v.GetStringChooserJSONParam("State");
+            if (st == null || st.val != "idle") { _lastBusyTime = Time.time; return false; }
+            return Time.time - _lastBusyTime >= _quietSeconds.val;
+        }
+
+        // "/event ..." makes the character react in her own voice (it triggers a reply), unlike the quiet scene description.
+        private bool SendEvent(string text)
+        {
+            MVRScript v = FindVoxta();
+            if (v == null) return false;
+            JSONStorableString trig = v.GetStringJSONParam("TriggerMessage");
+            if (trig == null) return false;
+            trig.valNoCallback = "";
+            trig.val = "/event " + text;
+            return true;
         }
 
         private void ClearSlot()
@@ -493,6 +734,278 @@ namespace VaMRT
             catch (Exception e) { ShowError("remove", e); }
         }
 
+        // ---------------------------------------------------------------- reactions
+
+        // A reaction calls one named action of one plugin on one atom, e.g. Person > Timeline > "Play Wink".
+        // It uses only plain storable calls (GetStorableIDs, GetActionNames, CallAction), no trigger framework.
+        private void AddReaction(string key, string title)
+        {
+            Reaction r = new Reaction();
+            r.Key = key; r.Title = title;
+            r.Atom = new JSONStorableStringChooser(title + ": atom", AtomChoices(), NoneChoice, title + ": atom");
+            r.Receiver = new JSONStorableStringChooser(title + ": plugin", new List<string> { NoneChoice }, NoneChoice, title + ": plugin");
+            r.Action = new JSONStorableStringChooser(title + ": action", new List<string> { NoneChoice }, NoneChoice, title + ": action");
+            RegisterStringChooser(r.Atom);
+            RegisterStringChooser(r.Receiver);
+            RegisterStringChooser(r.Action);
+            Reaction rr = r;
+            // the callbacks only refill the lists below; they never change a saved choice (that would break loading a scene)
+            r.Atom.setCallbackFunction += (string v) => { RefreshReceivers(rr); };
+            r.Receiver.setCallbackFunction += (string v) => { RefreshActions(rr); };
+            _reactions.Add(r);
+        }
+
+        private static List<string> AtomChoices()
+        {
+            List<string> ids = new List<string>();
+            foreach (Atom a in SuperController.singleton.GetAtoms()) if (a != null) ids.Add(a.uid);
+            ids.Sort();
+            ids.Insert(0, NoneChoice);
+            return ids;
+        }
+
+        private static List<string> WithNone(List<string> names, string keep)
+        {
+            names.Sort();
+            names.Insert(0, NoneChoice);
+            if (!string.IsNullOrEmpty(keep) && keep != NoneChoice && !names.Contains(keep)) names.Add(keep);   // a saved choice stays selectable
+            return names;
+        }
+
+        private void RefreshReceivers(Reaction r)
+        {
+            List<string> ids = new List<string>();
+            Atom a = r.Atom.val == NoneChoice ? null : SuperController.singleton.GetAtomByUid(r.Atom.val);
+            if (a != null) ids.AddRange(a.GetStorableIDs());
+            r.Receiver.choices = WithNone(ids, r.Receiver.val);
+        }
+
+        private void RefreshActions(Reaction r)
+        {
+            List<string> names = new List<string>();
+            Atom a = r.Atom.val == NoneChoice ? null : SuperController.singleton.GetAtomByUid(r.Atom.val);
+            JSONStorable st = (a == null || r.Receiver.val == NoneChoice) ? null : a.GetStorableByID(r.Receiver.val);
+            if (st != null) foreach (string n in st.GetActionNames()) if (!string.IsNullOrEmpty(n)) names.Add(n);
+            r.Action.choices = WithNone(names, r.Action.val);
+        }
+
+        private void RefreshAllReactions()
+        {
+            try
+            {
+                foreach (Reaction r in _reactions)
+                {
+                    List<string> atoms = AtomChoices();
+                    if (r.Atom.val != NoneChoice && !atoms.Contains(r.Atom.val)) atoms.Add(r.Atom.val);
+                    r.Atom.choices = atoms;
+                    RefreshReceivers(r);
+                    RefreshActions(r);
+                }
+                _statusText.val = "Atom and plugin lists refreshed.";
+            }
+            catch (Exception e) { ShowError("refresh", e); }
+        }
+
+        private string CallReaction(Reaction r)
+        {
+            if (r.Atom.val == NoneChoice || r.Receiver.val == NoneChoice || r.Action.val == NoneChoice) return "nothing chosen yet. Scroll down the left column and pick an atom, a plugin and an action under \"" + r.Title + ": call this action\".";
+            Atom a = SuperController.singleton.GetAtomByUid(r.Atom.val);
+            if (a == null) return "atom '" + r.Atom.val + "' not found";
+            JSONStorable st = a.GetStorableByID(r.Receiver.val);
+            if (st == null) return "plugin '" + r.Receiver.val + "' not found on " + a.uid;
+            st.CallAction(r.Action.val);
+            return "called " + a.uid + " > " + r.Receiver.val + " > " + r.Action.val;
+        }
+
+        private void FireTrigger(string kind)
+        {
+            try
+            {
+                string result = "no reaction defined";
+                foreach (Reaction r in _reactions) if (r.Key == kind) result = CallReaction(r);
+                _lastTriggerText = DateTime.Now.ToString("HH:mm:ss") + "  On " + kind + ": " + result;
+                _statusText.val = "Reaction " + _lastTriggerText;
+            }
+            catch (Exception e) { ShowError("reaction", e); }
+        }
+
+        // ---------------------------------------------------------------- follow (dry run)
+
+        private void SetAnchor()
+        {
+            FreeControllerV3 root = containingAtom.mainController;
+            if (root == null) { _statusText.val = "Cannot set the area centre yet: body controllers not found."; return; }
+            _anchorX = root.transform.position.x;
+            _anchorZ = root.transform.position.z;
+            _hasAnchor = true;
+            _statusText.val = "Follow area centre set to where she stands now.";
+        }
+
+        private void UpdateFollow(Vector3 rootPos, Vector3 fwd, bool haveUser, Vector3 userPos, float scale)
+        {
+            if (!_followOn.val)
+            {
+                _followText.val = "Follow is off. When on it only REPORTS what she would do to stay within reach of you; nothing is sent and she does not move.";
+                return;
+            }
+            if (!_hasAnchor) { _anchorX = rootPos.x; _anchorZ = rootPos.z; _hasAnchor = true; }
+            if (!haveUser) { _followText.val = "FOLLOW (dry run): no camera, so she cannot see where you are."; return; }
+            try
+            {
+                FollowLogic.Settings s = new FollowLogic.Settings();
+                s.MaxDist = _followMax.val;
+                s.MinDist = Mathf.Min(_followMin.val, s.MaxDist);
+                s.PreferredDist = Mathf.Min(_followPref.val, s.MaxDist);   // never aim outside the band, or she would walk on forever
+                s.Speed = _followSpeed.val;
+                s.AreaRadius = _followArea.val;
+                s.RequireGround = _followGround.val;
+
+                FollowLogic.Input i = new FollowLogic.Input();
+                i.SelfX = rootPos.x; i.SelfZ = rootPos.z; i.FacingX = fwd.x; i.FacingZ = fwd.z;
+                i.UserX = userPos.x; i.UserZ = userPos.z; i.AnchorX = _anchorX; i.AnchorZ = _anchorZ;
+
+                string pathNote = "not needed";
+                string groundNote = "not needed";
+                float gx, gz; bool clamped; string why;
+                if (FollowLogic.Goal(s, i, out gx, out gz, out clamped, out why))
+                {
+                    Vector3 goal = new Vector3(gx, rootPos.y, gz);
+                    string obstacle;
+                    i.ObstacleDist = ProbePath(rootPos, goal, scale, out obstacle);
+                    i.ObstacleName = obstacle;
+                    string gnote; bool known;
+                    bool ok = CheckGround(rootPos, goal, scale, out known, out gnote);
+                    i.GroundKnown = known; i.GroundOk = ok; i.GroundNote = gnote;
+                    pathNote = i.ObstacleDist < float.MaxValue ? (obstacle.Length > 0 ? "'" + obstacle + "'" : "obstacle") + " at " + i.ObstacleDist.ToString("0.0") + " m" : "clear";
+                    groundNote = !known ? "no floor under her, not checked" : (ok ? "ok" : gnote);
+                }
+
+                FollowLogic.Decision r = FollowLogic.Decide(s, i);
+                float fromCentre = FollowLogic.Dist(rootPos.x, rootPos.z, _anchorX, _anchorZ);
+                _followText.val = "FOLLOW (dry run: nothing is sent, she does not move)\n" +
+                                  FollowLogic.Describe(r) + "\n" +
+                                  "user " + r.UserDist.ToString("0.0") + " m away (walks when over " + s.MaxDist.ToString("0.0") + " m, stays put under " + s.MinDist.ToString("0.0") + " m)\n" +
+                                  "path: " + pathNote + " | ground: " + groundNote + "\n" +
+                                  "area: she is " + fromCentre.ToString("0.0") + " m from its centre (limit " + s.AreaRadius.ToString("0.0") + " m)\n" +
+                                  "would send: " + FollowLogic.CommandJson(r);
+            }
+            catch (Exception e) { ShowError("follow", e); }
+        }
+
+        // Distance along the way to the goal at which something solid is in the way (float.MaxValue = clear). Six rays: knee and
+        // waist height, centre and 30 cm to each side, so a table edge or a thin pole is found as well as a wall. Her own
+        // body is looked through; triggers are ignored.
+        private float ProbePath(Vector3 from, Vector3 goal, float scale, out string name)
+        {
+            name = "";
+            Vector3 dir = Flat(goal - from);
+            float len = dir.magnitude;
+            if (len < 0.05f) return float.MaxValue;
+            dir = dir * (1f / len);
+            Vector3 side = new Vector3(dir.z, 0f, -dir.x);
+            float best = float.MaxValue;
+            float[] heights = new float[] { 0.35f * scale, 1.0f * scale };
+            float[] lateral = new float[] { -0.3f * scale, 0f, 0.3f * scale };
+            for (int h = 0; h < heights.Length; h++)
+            {
+                for (int l = 0; l < lateral.Length; l++)
+                {
+                    Vector3 o = from + side * lateral[l];
+                    o.y = from.y + heights[h];
+                    float travelled = 0f;
+                    for (int k = 0; k < 8; k++)
+                    {
+                        float room = len + 0.3f - travelled;
+                        if (room <= 0f) break;
+                        RaycastHit hit;
+                        if (!Physics.Raycast(o, dir, out hit, room, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) break;
+                        if (hit.collider == null) break;
+                        if (hit.collider.transform.IsChildOf(containingAtom.transform))
+                        {
+                            o = hit.point + dir * 0.02f;           // her own body: look past it
+                            travelled += hit.distance + 0.02f;
+                            continue;
+                        }
+                        if (travelled + hit.distance < best)
+                        {
+                            best = travelled + hit.distance;
+                            Atom owner = hit.collider.GetComponentInParent<Atom>();
+                            name = owner != null ? owner.uid : hit.collider.name;
+                        }
+                        break;
+                    }
+                }
+            }
+            return best;
+        }
+
+        // 0 = no floor, 1 = walkable floor (within 25 cm of the level she stands on), 2 = a step or a drop
+        private int GroundAt(Vector3 p, float scale, float baseY)
+        {
+            Vector3 o = new Vector3(p.x, baseY + 1.0f * scale, p.z);
+            float room = 2.0f * scale;
+            for (int k = 0; k < 8; k++)
+            {
+                RaycastHit hit;
+                if (!Physics.Raycast(o, Vector3.down, out hit, room, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) return 0;
+                if (hit.collider == null) return 0;
+                if (hit.collider.transform.IsChildOf(containingAtom.transform))
+                {
+                    o = hit.point + Vector3.down * 0.02f;           // her own body: look past it
+                    room -= hit.distance + 0.02f;
+                    if (room <= 0f) return 0;
+                    continue;
+                }
+                float dy = hit.point.y - baseY;
+                return (dy > -0.25f && dy < 0.25f) ? 1 : 2;
+            }
+            return 0;
+        }
+
+        // Is there walkable floor all the way to the goal? known = false when there is no floor under her at all (a scene without
+        // a floor: nothing to judge by, so the check is skipped rather than blocking her forever).
+        private bool CheckGround(Vector3 from, Vector3 goal, float scale, out bool known, out string note)
+        {
+            note = "";
+            known = GroundAt(from, scale, from.y) != 0;
+            if (!known) return true;
+            Vector3 dir = Flat(goal - from);
+            float len = dir.magnitude;
+            if (len < 0.05f) return true;
+            dir = dir * (1f / len);
+            int steps = (int)(len / 0.6f) + 1;
+            if (steps > 10) steps = 10;
+            for (int k = 1; k <= steps; k++)
+            {
+                float dist = Mathf.Min(len, k * 0.6f);
+                int g = GroundAt(from + dir * dist, scale, from.y);
+                if (g == 1) continue;
+                note = (g == 0 ? "no floor" : "a step or drop") + " at " + dist.ToString("0.0") + " m";
+                return false;
+            }
+            return true;
+        }
+
+        // ---------------------------------------------------------------- E-Motion
+
+        // E-Motion (VRAdultFun) is a plugin on the same atom; its class is VRAdultFun.EmotionEngine.
+        private MVRScript FindEMotion()
+        {
+            if (_emotion != null) return _emotion;
+            if (Time.time - _emotionCheckTime < 3f) return null;
+            _emotionCheckTime = Time.time;
+            MVRPluginManager mgr = containingAtom.GetStorableByID("PluginManager") as MVRPluginManager;
+            if (mgr == null) return null;
+            Transform plugins = mgr.gameObject.transform.Find("Plugins");
+            if (plugins == null) return null;
+            foreach (Transform t in plugins)
+            {
+                MVRScript p = t.gameObject.GetComponent<MVRScript>();
+                if (p != null && p.name != null && p.name.EndsWith("EmotionEngine")) { _emotion = p; return p; }
+            }
+            return null;
+        }
+
         // ---------------------------------------------------------------- errors
 
         private void ShowError(string where, Exception e)
@@ -537,6 +1050,9 @@ namespace VaMRT
             public float UserDistance;
             public float UserAngle;
             public bool UserLooking;
+            public bool HasMood;
+            public float Valence;   // E-Motion's happiness, 0..10
+            public float Arousal;   // E-Motion's excitement, 0..10
             public List<ObjectInfo> Objects = new List<ObjectInfo>();
         }
 
@@ -553,17 +1069,6 @@ namespace VaMRT
             return "directly behind";
         }
 
-        public static string ShortDirection(float a)
-        {
-            float abs = Math.Abs(a);
-            string side = a >= 0f ? "right" : "left";
-            if (abs < 22.5f) return "ahead";
-            if (abs < 67.5f) return "ahead-" + side;
-            if (abs < 112.5f) return side;
-            if (abs < 157.5f) return "behind-" + side;
-            return "behind";
-        }
-
         // used as "{{ user }} is <phrase>"
         public static string DistancePhrase(float d)
         {
@@ -573,13 +1078,27 @@ namespace VaMRT
             return "about " + Math.Round(d).ToString("0") + " m from " + CHAR;
         }
 
-        // used inside parentheses for objects
-        public static string DistanceShort(float d)
+        // where an object is, as a phrase: "within reach", "close by", "about 3 m away"
+        public static string ObjectDistance(float d)
         {
-            if (d < 0.5f) return "touching distance";
+            if (d < 0.5f) return "right beside " + CHAR;
             if (d < 1.0f) return "within reach";
-            if (d < 2.0f) return "close";
-            return Math.Round(d).ToString("0") + " m away";
+            if (d < 2.0f) return "close by";
+            return "about " + Math.Round(d).ToString("0") + " m away";
+        }
+
+        // one plain sentence per object (not a bracketed list, which a small action model can mistake for a request)
+        public static string ObjectSentence(ObjectInfo o)
+        {
+            string where = ObjectDistance(o.Distance) + ", " + Direction(o.Angle);
+            string t = o.IsPerson ? "Another person, " + o.Name + ", is " + where + "." : "There is " + WithArticle(o.Name) + " " + where + ".";
+            if (!o.IsPerson)
+            {
+                if (o.Sit) t += " It can be sat on.";
+                if (o.Surface) t += " It is a flat surface.";
+                if (o.Look) t += " It is worth looking at.";
+            }
+            return t;
         }
 
         // hipHeight: hip above her base control; standHip: learned standing hip height; torsoAngle: degrees from vertical
@@ -592,6 +1111,15 @@ namespace VaMRT
             if (ratio < 0.35f && torsoAngle >= 55f) return "lying down";
             if (ratio >= 0.35f && ratio <= 0.8f && torsoAngle < 50f) return "sitting or crouching";
             return "in an unclear pose";
+        }
+
+        // "happy and excited" from E-Motion's two numbers; empty while she is neutral, so the description stays short
+        public static string MoodPhrase(float valence, float arousal)
+        {
+            string mood = valence < 1.5f ? "" : (valence < 3.5f ? "pleased" : (valence < 6f ? "happy" : "delighted"));
+            string energy = arousal < 2f ? "" : (arousal < 5f ? "interested" : (arousal < 8f ? "excited" : "very excited"));
+            if (mood.Length > 0 && energy.Length > 0) return mood + " and " + energy;
+            return mood.Length > 0 ? mood : energy;
         }
 
         public static float SignedAngleY(Vector3 forward, Vector3 to)
@@ -665,7 +1193,8 @@ namespace VaMRT
         public static string Build(Data d)
         {
             List<string> lines = new List<string>();
-            lines.Add("Physical situation of " + CHAR + " (live background information, not something to read out):");
+            lines.Add("What " + CHAR + " is aware of in the scene right now. This is background knowledge only, never a request to do anything. " +
+                      CHAR + " can mention it naturally or answer questions about it.");
 
             StringBuilder self = new StringBuilder("- " + CHAR + " is " + d.Pose);
             if (d.LegsWide && d.Pose == "standing") self.Append(" with their legs wide apart");
@@ -678,6 +1207,12 @@ namespace VaMRT
             self.Append(".");
             lines.Add(self.ToString());
 
+            if (d.HasMood)
+            {
+                string mood = MoodPhrase(d.Valence, d.Arousal);
+                if (mood.Length > 0) lines.Add("- " + CHAR + " seems " + mood + ".");
+            }
+
             if (d.HasUser)
             {
                 string u = "- " + USER + " is " + DistancePhrase(d.UserDistance) + ", " + Direction(d.UserAngle);
@@ -687,23 +1222,279 @@ namespace VaMRT
 
             if (d.Objects.Count == 0)
             {
-                lines.Add("- Nothing else is nearby.");
+                lines.Add("- There is nothing else around " + CHAR + ".");
             }
             else
             {
-                List<string> items = new List<string>();
-                foreach (ObjectInfo o in d.Objects)
-                {
-                    string detail = DistanceShort(o.Distance) + ", " + ShortDirection(o.Angle);
-                    if (o.Sit) detail += ", can be sat on";
-                    if (o.Surface) detail += ", a surface";
-                    if (o.Look) detail += ", worth looking at";
-                    string label = o.IsPerson ? "another person, " + o.Name : WithArticle(o.Name);
-                    items.Add(label + " (" + detail + ")");
-                }
-                lines.Add("- Nearby: " + string.Join("; ", items.ToArray()) + ".");
+                foreach (ObjectInfo o in d.Objects) lines.Add("- " + ObjectSentence(o));
             }
             return string.Join("\n", lines.ToArray());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Decides when the user's behaviour is worth reacting to. Pure logic (no VaM types) so it can be tested.
+    // Zones use hysteresis and a short confirmation, so walking around the edge of a zone does not spam events.
+    // Idea (not code) from the glance/gaze/stare accumulation in VoxtaTouchElite.
+    // -------------------------------------------------------------------------
+    public class Presence
+    {
+        private const int NEAR = 0, MID = 1, GONE = 2;
+        private const float RearmAfterLookingAway = 8f;   // a stare needs the user to look away before the next one
+        private const float StareSpacing = 3f;            // minimum time between stares, in cooldowns
+        private int _zone = -1;
+        private int _candidate = -1;
+        private float _candidateSince;
+        private float _lookSeconds;
+        private float _notLooking;
+        private bool _stareArmed = true;
+        private float _lastEventTime = -1000f;
+        private float _lastStareTime = -1000f;
+        private int _approachCount, _leaveCount, _stareCount;
+
+        private static readonly string[] ApproachText = new string[] {
+            SensesLogic.USER + " walks up to " + SensesLogic.CHAR + ".",
+            SensesLogic.USER + " comes closer to " + SensesLogic.CHAR + ".",
+            SensesLogic.USER + " steps up next to " + SensesLogic.CHAR + "." };
+        private static readonly string[] LeaveText = new string[] {
+            SensesLogic.USER + " walks away from " + SensesLogic.CHAR + ".",
+            SensesLogic.USER + " wanders off, away from " + SensesLogic.CHAR + ".",
+            SensesLogic.USER + " moves further away from " + SensesLogic.CHAR + "." };
+        private static readonly string[] StareText = new string[] {
+            SensesLogic.USER + " has been looking at " + SensesLogic.CHAR + " for a while.",
+            SensesLogic.USER + " keeps watching " + SensesLogic.CHAR + " without a word.",
+            SensesLogic.USER + "'s eyes are fixed on " + SensesLogic.CHAR + ".",
+            SensesLogic.USER + " has not looked away from " + SensesLogic.CHAR + " in a while." };
+
+        public void Reset()
+        {
+            _zone = -1; _candidate = -1; _lookSeconds = 0f; _notLooking = 0f; _stareArmed = true;
+        }
+
+        // Also forgets cooldowns and wording counters (new chat, or the user toggling events).
+        public void ResetAll()
+        {
+            Reset();
+            _lastEventTime = -1000f; _lastStareTime = -1000f;
+            _approachCount = 0; _leaveCount = 0; _stareCount = 0;
+        }
+
+        // Different wording each time, so the chat history does not fill with one repeated sentence.
+        public static string EventText(string kind, int n)
+        {
+            string[] t = kind == "approach" ? ApproachText : (kind == "leave" ? LeaveText : StareText);
+            return t[n % t.Length];
+        }
+
+        public string TextFor(string kind)
+        {
+            return EventText(kind, kind == "approach" ? _approachCount : (kind == "leave" ? _leaveCount : _stareCount));
+        }
+
+        // Returns "approach", "leave", "stare" or null. Call Fired() once the event was really sent.
+        // quiet = nobody is talking right now. Zone changes during a conversation are dropped, and looking at her while
+        // talking does not count as a stare (it is the normal thing to do).
+        public string Update(float now, float dt, float dist, bool looking, bool quiet, float approach, float leave, float stare, float cooldown)
+        {
+            int z = _zone;
+            if (z < 0)
+            {
+                z = dist < approach ? NEAR : (dist > leave ? GONE : MID);   // the first reading never fires an event
+            }
+            else
+            {
+                if (z != NEAR && dist < approach) z = NEAR;
+                else if (z == NEAR && dist > approach + 0.5f) z = MID;
+                if (z != GONE && dist > leave) z = GONE;
+                else if (z == GONE && dist < leave - 0.5f) z = MID;
+            }
+
+            string ev = null;
+            if (_zone < 0)
+            {
+                _zone = z; _candidate = z; _candidateSince = now;
+            }
+            else if (z != _zone)
+            {
+                if (z != _candidate) { _candidate = z; _candidateSince = now; }
+                else if (now - _candidateSince >= 1.5f)
+                {
+                    _zone = z;
+                    if (z == NEAR) ev = "approach";
+                    else if (z == GONE) ev = "leave";
+                }
+            }
+            else
+            {
+                _candidate = _zone;
+            }
+
+            if (looking) _notLooking = 0f;
+            else { _notLooking += dt; if (_notLooking >= RearmAfterLookingAway) _stareArmed = true; }
+
+            if (looking && quiet) _lookSeconds = Math.Min(_lookSeconds + dt, stare * 1.5f);
+            else if (looking) _lookSeconds = 0f;
+            else _lookSeconds = Math.Max(0f, _lookSeconds - dt * 0.5f);
+
+            if (ev == null && _stareArmed && _lookSeconds >= stare && _zone != GONE) ev = "stare";
+
+            if (ev != null && !quiet) return null;                                   // never interrupt a conversation
+            if (ev != null && now - _lastEventTime < cooldown) return null;          // too soon after the last event
+            if (ev == "stare" && now - _lastStareTime < cooldown * StareSpacing) return null;
+            return ev;
+        }
+
+        public void Fired(string kind, float now)
+        {
+            _lastEventTime = now;
+            if (kind == "approach") _approachCount++;
+            else if (kind == "leave") _leaveCount++;
+            else
+            {
+                _stareCount++; _lookSeconds = 0f; _stareArmed = false; _notLooking = 0f; _lastStareTime = now;
+            }
+        }
+
+        public string DebugText(float now, float stare, float cooldown)
+        {
+            string zone = _zone == NEAR ? "near" : (_zone == GONE ? "far away" : (_zone == MID ? "mid distance" : "unknown"));
+            float wait = cooldown - (now - _lastEventTime);
+            return "presence: " + zone + ", looking " + _lookSeconds.ToString("0.0") + "/" + stare.ToString("0") + " s" +
+                   (_stareArmed ? "" : " (stare waits for a look away)") + ", " +
+                   (wait > 0f ? "next event allowed in " + wait.ToString("0") + " s" : "ready for an event");
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Follow: what should she do to stay within reach of the user? Pure logic (no VaM calls), so it can be tested.
+    // The plugin measures (positions, obstacles, ground), this class decides, and the answer is a short "lease"
+    // command in HER OWN frame (metres ahead / to the right), which is what the motion stream will consume later.
+    // In this version the plugin only REPORTS what it would do (dry run); nothing is sent and she does not move.
+    // ------------------------------------------------------------------------------------------------------
+    public static class FollowLogic
+    {
+        public const float ArriveRadius = 0.35f;   // within this of the goal she simply stands (matches the motion planner)
+        public const float StopMargin = 0.6f;      // she stops this far in front of an obstacle
+        public const float LeaseSeconds = 3f;      // a command is only valid this long; no renewal = she stops
+
+        public class Settings
+        {
+            public float MinDist = 0.8f;        // closer than this to the user: she stays put
+            public float MaxDist = 2.5f;        // farther than this: she walks towards the user
+            public float PreferredDist = 1.8f;  // she walks to a point this far from the user (on the line towards her)
+            public float Speed = 1.2f;          // m/s
+            public float AreaRadius = 6f;       // she never goes farther than this from the area centre
+            public bool RequireGround = true;
+        }
+
+        public class Input
+        {
+            public float SelfX, SelfZ;
+            public float FacingX = 0f, FacingZ = 1f;   // unit vector: where she faces
+            public float UserX, UserZ;
+            public float AnchorX, AnchorZ;             // centre of the allowed area
+            public float ObstacleDist = float.MaxValue;  // distance along the way to the nearest obstacle
+            public string ObstacleName = "";
+            public bool GroundKnown;                   // false when there is no floor under her at all (nothing to judge by)
+            public bool GroundOk = true;
+            public string GroundNote = "";
+        }
+
+        public class Decision
+        {
+            public bool Walk;                 // true = she would walk, false = she would stand
+            public string Why = "";           // short reason, for the status text
+            public float GoalX, GoalZ;        // world position she would walk to
+            public float Forward, Right;      // the same goal in her own frame, metres ahead / to the right
+            public float Speed;
+            public float UserDist;
+            public bool Shortened, Clamped;
+        }
+
+        public static float Dist(float ax, float az, float bx, float bz)
+        {
+            float dx = ax - bx, dz = az - bz;
+            return (float)Math.Sqrt(dx * dx + dz * dz);
+        }
+
+        // Where would she like to be? Returns false (and a reason) when she is already fine where she is.
+        // The goal is already clamped to the allowed area (clamped = true when that changed it).
+        public static bool Goal(Settings s, Input i, out float gx, out float gz, out bool clamped, out string why)
+        {
+            gx = i.SelfX; gz = i.SelfZ; why = ""; clamped = false;
+            float d = Dist(i.SelfX, i.SelfZ, i.UserX, i.UserZ);
+            if (d < s.MinDist) { why = "too close to the user, staying put"; return false; }
+            if (d <= s.MaxDist) { why = "within reach of the user"; return false; }
+            // a point PreferredDist from the user, on the line from the user towards her
+            float ux = (i.SelfX - i.UserX) / d, uz = (i.SelfZ - i.UserZ) / d;
+            gx = i.UserX + ux * s.PreferredDist;
+            gz = i.UserZ + uz * s.PreferredDist;
+            float fromCentre = Dist(gx, gz, i.AnchorX, i.AnchorZ);       // stay inside the allowed area
+            if (fromCentre > s.AreaRadius)
+            {
+                float k = s.AreaRadius / fromCentre;
+                gx = i.AnchorX + (gx - i.AnchorX) * k;
+                gz = i.AnchorZ + (gz - i.AnchorZ) * k;
+                clamped = true;
+            }
+            return true;
+        }
+
+        public static Decision Decide(Settings s, Input i)
+        {
+            Decision r = new Decision();
+            r.Speed = s.Speed;
+            r.UserDist = Dist(i.SelfX, i.SelfZ, i.UserX, i.UserZ);
+            float gx, gz; bool clamped; string why;
+            if (!Goal(s, i, out gx, out gz, out clamped, out why)) { r.Why = why; return r; }
+            r.Clamped = clamped;
+            // (If she is outside the area, the clamped goal is inside it, so she is simply brought back to its edge.)
+
+            float dx = gx - i.SelfX, dz = gz - i.SelfZ;
+            float len = (float)Math.Sqrt(dx * dx + dz * dz);
+            if (len <= ArriveRadius)
+            { r.Why = r.Clamped ? "the user is outside the allowed area; she is at its edge" : "already at the goal"; return r; }
+
+            if (s.RequireGround && i.GroundKnown && !i.GroundOk)
+            { r.Why = "no safe ground ahead" + (i.GroundNote.Length > 0 ? " (" + i.GroundNote + ")" : ""); return r; }
+
+            // obstacles: stop short of them
+            if (i.ObstacleDist < len + 0.1f)
+            {
+                float safe = i.ObstacleDist - StopMargin;
+                string what = i.ObstacleName.Length > 0 ? "'" + i.ObstacleName + "' " : "an obstacle ";
+                if (safe <= ArriveRadius) { r.Why = what + "is " + i.ObstacleDist.ToString("0.0") + " m ahead"; return r; }
+                float k = safe / len;
+                gx = i.SelfX + dx * k; gz = i.SelfZ + dz * k;
+                dx *= k; dz *= k;
+                r.Shortened = true;
+                r.Why = "walking up to " + what + "(" + i.ObstacleDist.ToString("0.0") + " m ahead), stopping " + StopMargin.ToString("0.0") + " m short";
+            }
+
+            r.Walk = true;
+            r.GoalX = gx; r.GoalZ = gz;
+            // the goal in her own frame: ahead = along her facing, right = to her right (Unity: right of +Z is +X)
+            r.Forward = dx * i.FacingX + dz * i.FacingZ;
+            r.Right = dx * i.FacingZ - dz * i.FacingX;
+            if (r.Why.Length == 0) r.Why = r.Clamped ? "walking to the edge of the allowed area" : "too far from the user";
+            return r;
+        }
+
+        // One line each, for the plugin's status box.
+        public static string Describe(Decision r)
+        {
+            if (!r.Walk) return "would STAND: " + r.Why;
+            return "would WALK " + r.Forward.ToString("0.0") + " m ahead, " + Math.Abs(r.Right).ToString("0.0") + " m to the " +
+                   (r.Right >= 0f ? "right" : "left") + " at " + r.Speed.ToString("0.0") + " m/s: " + r.Why;
+        }
+
+        // The command the motion stream would receive (in her own frame, with a short lease).
+        public static string CommandJson(Decision r)
+        {
+            System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;   // JSON needs a dot, whatever the PC's region
+            if (!r.Walk) return "{\"cmd\":\"stand\",\"lease_s\":" + LeaseSeconds.ToString("0.#", inv) + "}";
+            return "{\"cmd\":\"goto\",\"forward\":" + r.Forward.ToString("0.00", inv) + ",\"right\":" + r.Right.ToString("0.00", inv) +
+                   ",\"speed\":" + r.Speed.ToString("0.0", inv) + ",\"lease_s\":" + LeaseSeconds.ToString("0.#", inv) + "}";
         }
     }
 }

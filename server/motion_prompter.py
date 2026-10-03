@@ -209,6 +209,8 @@ def repair(raw):
     for p in parts:
         p = _SUBJECT.sub("A person", p)
         p = _POSSESSIVE.sub("their", p)
+        # ARDY prompts must not contain names ("slaps Todd playfully"): any capitalised word after the first is a proper noun
+        p = re.sub(r"(?<=\s)[A-Z][a-z]+\b", "someone", p)
         fixed.append(" ".join(p.split()))
     return " >> ".join(x for x in fixed if x)
 
@@ -461,6 +463,24 @@ def selftest():
     STAND_, CHAIR_ = "A person stands upright.", "A person sits down. @3 >> A person sits in a chair."
     FLOOR_ = "A person sits cross-legged with their hands resting on their knees."
     lifetime_cases = [
+        ("A person wiggles their hips playfully.", STAND_, "tease playfully",
+         "A person wiggles their hips playfully. @4 >> A person stands upright."),
+        ("A person claps their hands.", STAND_, "clap", "A person claps their hands. @4 >> A person stands upright."),
+        ("A person dances.", STAND_, "dance", "A person dances. @60 >> A person stands upright."),
+        ("A person stands with their legs wide apart.", STAND_, "pose", "A person stands with their legs wide apart."),
+        ("A person sits in a chair.", CHAIR_, "sit", "A person sits in a chair."),
+        ("A person is bent over at the waist, touching their toes.", STAND_, "pose",
+         "A person is bent over at the waist, touching their toes."),
+        ("A person is walking forward.", STAND_, "walk", "A person is walking forward. @10 >> A person stands upright."),
+        ("A person stands up from a chair. >> A person walks forward.", CHAIR_, "walk",
+         "A person stands up from a chair. >> A person walks forward. @10 >> A person sits down. @3 >> A person sits in a chair."),
+        ("A person turns around 180 degrees.", STAND_, "turn", "A person turns around 180 degrees. @4 >> A person stands upright."),
+        ("A person stands and waves.", STAND_, "wave", "A person stands and waves. @4 >> A person stands upright."),
+        ("A person stands with their arms raised overhead.", STAND_, "pose", "A person stands with their arms raised overhead."),
+        ("A person sits cross-legged with their hands resting on their knees.", STAND_, "pose",
+         "A person sits cross-legged with their hands resting on their knees."),
+        ("A person squats down.", STAND_, "pose", "A person squats down."),
+        ("A person dances. [free]", STAND_, "keep dancing for a long time", "A person dances. @120 >> A person stands upright."),
         ("A person waves with their right hand. [free]", STAND_, "wave",
          "A person waves with their right hand. @4 >> A person stands upright."),
         ("A person dances. [free]", STAND_, "dance", "A person dances. @60 >> A person stands upright."),
@@ -487,6 +507,10 @@ def selftest():
          f"A person stands up from a chair. >> {SP} ?? A person dances. @60 >> A person sits down. @3 >> A person sits in a chair."),
         ("A person waves with their right hand. @4 >> A person stands upright.", "A person waves with their right hand. @4 >> A person stands upright."),
     ]
+    scrubbed, _ = validate(repair("A person slaps Todd playfully with their right hand. @2 >> A person stands upright."), "A person stands upright.")
+    ok = scrubbed is not None and "Todd" not in scrubbed and "someone" in scrubbed
+    print(("ok  " if ok else "BAD ") + "names are scrubbed from prompts -> " + str(scrubbed))
+    bad += (not ok)
     STAND0 = "A person stands upright."
     fast_cases = [
         ("keep my legs spread wide, bend over, and touch the ground",
@@ -506,6 +530,11 @@ def selftest():
         ("bend over with your legs apart", "A person bends over with their legs wide apart. @2 >> "
                                            "A person is bent over at the waist with their legs wide apart."),
         ("say hello", "KEEP"),
+        ("a chair (close, ahead-left)", "KEEP"),
+        ("a chair close by, in front and to the left. it can be sat on.", "KEEP"),
+        ("a table within reach, to the right. it is a flat surface.", "KEEP"),
+        ("a table (within reach, ahead-right, a surface)", "KEEP"),
+        ("there is a chair within reach, in front and to the left", "KEEP"),
         ("turn around", "A person turns around 180 degrees. >> A person stands upright."),
     ]
     for req_, want in fast_cases:
@@ -680,20 +709,51 @@ def strip_fallbacks(line):
     return ">>".join(out)
 
 
+# --------------------------------------------------------------------------- durations: nothing may run forever
+# The LAST part of a plan is open-ended ("hold until changed"). It must be a pose that settles. If it is a movement it would
+# run until someone interrupts it, so here every final movement gets a lifetime and a return to what she was doing.
+MAX_PART_SECONDS = 180   # the longest any one movement may last (the validator accepts 1-180 s)
+# a line that describes a pose: "A person stands with their legs wide apart."
+_STATE_START = re.compile(r"^A person (?:stands|sits|kneels|squats|crouches|lies|leans|is|holds|rests|waits|stays|remains|has)\b", re.I)
+# verbs that mean she is MOVING even when the line starts like a pose: "A person is walking forward."
+_MOVING = re.compile(
+    r"\b(?:walk|run|jog|march|step|stride|shuffle|pace|danc|wiggl|sway|shak|bounc|hop|jump|skip|spin|turn|kick|punch|clap|wav|"
+    r"stretch|crawl|climb|swim|rock|nod|jiggl|twirl|swing|stomp|flap|scratch|wipe|brush|throw|slap|bow|salute|shrug|beckon)\w*", re.I)
+
+
+def _is_movement(text):
+    """True if the line describes something she DOES (it ends or repeats) and not a pose she HOLDS. Unknown verbs count as
+    movements, because wrongly ending a pose is harmless and wrongly holding a movement is not."""
+    t = (text or "").strip()
+    if _STATE_START.match(t) and not (_MOVING.search(t) or _ACTIVITY.search(t) or _GESTURE.search(t)):
+        return False
+    return True
+
+
 def apply_lifetime(line, current, request=""):
-    """Turn 'A person waves. [free]' into 'A person waves. @4 >> <back to what she was doing>'."""
-    if not line or line == "KEEP" or not _FREE.search(line):
+    """Give the final movement of a plan a lifetime and a way back.
+    'A person waves. [free]'                       -> 'A person waves. @4 >> <what she was doing>'
+    'A person wiggles their hips playfully.'       -> '... @4 >> <what she was doing>'   (a reaction, not an activity)
+    'A person stands up. >> A person walks forward.' -> '... >> A person walks forward. @10 >> <what she was doing>'
+    Dances, walks and the like keep their longer lifetimes; the lengths are in _LIFETIMES. A final pose is left alone."""
+    if not line or line == "KEEP":
         return line
+    free = _FREE.search(line) is not None
     parts = [p.strip() for p in _FREE.sub("", line).split(">>") if p.strip()]
     if not parts:
         return line
-    last = parts[-1]
+    last = _AT.sub("", parts[-1]).strip()
+    if not free and not _is_movement(last):
+        return line                      # the final part is a pose: it settles by itself
+    activity = free or _ACTIVITY.search(last) is not None
     if _GESTURE.search(last):
         secs = GESTURE_SECONDS
     else:
-        secs = next((d for kw, d in _LIFETIMES if re.search(r"\b" + kw, last, re.I)), DEFAULT_SECONDS)
+        secs = next((d for kw, d in _LIFETIMES if re.search(r"\b" + kw, last, re.I)),
+                    DEFAULT_SECONDS if activity else GESTURE_SECONDS)
     if _KEEP_GOING.search(request or ""):
         secs *= 2
+    secs = int(max(1, min(secs, MAX_PART_SECONDS)))
     cur_seated = _SEATED.search(_FREE.sub("", (current or "").split(">>")[-1])) is not None
     ends_standing = (not cur_seated) or any(_GETS_UP.search(p) for p in parts[:-1])
     new_parts = parts[:-1] + [f"{last} @{secs}"] + _return_parts(base_pose(current), ends_standing)
@@ -765,11 +825,22 @@ def posture(current):
     return "standing"
 
 
+_SCENE_NOTE = re.compile(
+    r"\((?:[^)]*\b(?:ahead|behind|within reach|touching distance|m away|can be sat on|a surface|worth looking at)\b)|"
+    r"\bwhat .{0,40} is aware of\b|\bphysical situation of\b|\bthere is an? .{1,40}\b(?:within reach|close by|m away)\b|"
+    r"\b(?:close by|within reach|about \d+ m away|right beside \w+),? (?:directly|in front|behind|to the (?:left|right))|"
+    r"\bit can be sat on\b|\bit is a flat surface\b|\bit is worth looking at\b", re.I)
+
+
 def fast_path(request, current):
     """A validated prompt line (or "KEEP") for obvious requests, or None to ask the LLM."""
     t = " ".join((request or "").lower().replace("'", "'").split())
     if not t:
         return None
+    # The Senses plugin's scene description sometimes gets mistaken for a request by the action model
+    # ("a chair (close, ahead-left)" made her sit down). Those are never movements.
+    if _SCENE_NOTE.search(t):
+        return "KEEP"
     intents = {name for name, rx in _INTENTS if rx.search(t)}
     hits = [key for rx, key in POSE_REQUESTS if rx.search(t)]
     if hits:

@@ -7,7 +7,11 @@ __pycache__/
 metrics.tsv
 prompt.txt
 ardy_request.json
+ardy_control.json
 *.log
+# Probe output (constraint_probe.py)
+probe_*.csv
+probe_bvh/
 # Third-party packages and models: do not redistribute
 *.var
 *.safetensors
@@ -17,4 +21,3 @@ ardy_request.json
 # Local settings / secrets
 .env
 *.local.bat
-*.zip

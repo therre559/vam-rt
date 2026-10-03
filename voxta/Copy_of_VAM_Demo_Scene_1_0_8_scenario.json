@@ -1,0 +1,179 @@
+{
+  "$type": "scenario",
+  "Client": "Voxta.VirtAMate",
+  "Creator": "Voxta",
+  "Description": "Shows off the basic features of Voxta in Virt-A-Mate",
+  "InitScript": "export function trigger(e) {\n  \n}",
+  "SharedScripts": [
+    {
+      "Name": "index",
+      "Content": "import { chat } from \"@voxta\";\nimport { startGenerating, startSpeaking, doneSpeaking } from './speech';\nimport { showSubtitles, playTimelineAnimation } from './vam';\n\nfunction canPlayAnimation() {\n  // Check if the flag `Voxta_states_blocked` is NOT set\n  return !chat.hasFlag('Voxta_states_blocked');\n}\n\nchat.addEventListener(\"transcriptionStarted\", (e) => {\n  if (canPlayAnimation()) {\n    playTimelineAnimation('VS_listening', { randomInGroup: true });\n  }\n});\n\nchat.addEventListener(\"transcriptionFinished\", (e) => {\n  if (!e.text && canPlayAnimation()) {\n    playTimelineAnimation('VS_idle');\n  }\n});\n\nchat.addEventListener(\"userMessageReceived\", (e) => {\n  showSubtitles(e.message.text, 'User');\n});\n\nchat.addEventListener(\"generating\", (e) => {\n  startGenerating();\n  if (canPlayAnimation()) {\n    playTimelineAnimation('VS_thinking', { randomInGroup: true });\n  }\n});\n\nchat.addEventListener(\"speechStart\", (e) => {\n  const firstSpeech = startSpeaking();\n  if (firstSpeech && canPlayAnimation()) {\n    playTimelineAnimation('VS_speaking', { randomInGroup: true });\n  }\n  showSubtitles(e.message.text, 'Character');\n});\n\nchat.addEventListener(\"speechComplete\", (e) => {\n  if (canPlayAnimation()) {\n    playTimelineAnimation('VS_idle');\n  }\n  const hasSpoken = doneSpeaking();\n  if (!hasSpoken) {\n    showSubtitles(e.message.text, 'Character');\n  }\n});"
+    },
+    {
+      "Name": "speech",
+      "Content": "import { chat } from \"@voxta\";\n\nlet isSpeaking = false;\nlet isSpeakingStarted = false;\nlet queue = [];\n\nexport function startGenerating() {\n  isSpeaking = true;\n  isSpeakingStarted = false;\n}\n\nexport function startSpeaking() {\n  let wasSpeaking = isSpeakingStarted;\n  isSpeakingStarted = true;\n  return !wasSpeaking;\n}\n\nexport function doneSpeaking() {\n  console.log('speaking done: ' + isSpeakingStarted);\n  const hasSpoken = isSpeakingStarted;\n  isSpeaking = false;\n  isSpeakingStarted = false;\n  if (!queue.length) return hasSpoken;\n  const toExecute = [...queue];\n  queue = [];\n  toExecute.forEach(fn => fn());\n  return hasSpoken;\n}\n\nexport function runAfterSpeech(fn) {\n  if (!isSpeaking) {\n    fn();\n  } else {\n    queue.push(fn);\n  }\n}"
+    },
+    {
+      "Name": "vam",
+      "Content": "import { chat } from \"@voxta\";\nimport { runAfterSpeech } from './speech';\n\n// Set to false if this scene has no \"Overlays\" atom (otherwise VaM logs an error for every subtitle).\nconst SHOW_SUBTITLES = false;\n\nconst overlays = {\n  atom: 'Overlays',\n  storable: 'plugin#0_VAMOverlaysPlugin.VAMOverlays'\n};\n\n// Timeline animations are switched off: ARDY (the BVH player) drives the body now, and this scene has no\n// Timeline plugin, so every call used to log an error in VaM.\nexport function playTimelineAnimation(name, options) {\n  return;\n}\n\nexport function showSubtitles(text, who) {\n  if (!SHOW_SUBTITLES) return;\n  chat.appTrigger('String', overlays.atom, overlays.storable, \"Set and show subtitles\", text);\n  const color = who === 'User' ? '#90CDE0' : '#E5BEBE';\n  chat.appTrigger('Color', overlays.atom, overlays.storable, \"Subtitles Color\", color);\n}"
+    }
+  ],
+  "Actions": [
+    {
+      "Layer": "",
+      "Arguments": [
+        {
+          "Name": "prompt",
+          "Type": 1,
+          "Description": "A short plain description of what body movement to do, for example 'sit down on the floor' or 'dance'.",
+          "Required": true
+        },
+        {
+          "Name": "style",
+          "Type": 1,
+          "Description": "Optional, ONLY for dancing, walking or waving: how to do it, in a word or two, such as slow, sexy, playful or energetic. Leave it empty for every other movement, and when the user did not say.",
+          "Required": false
+        }
+      ],
+      "Display": "Card",
+      "FinalLayer": false,
+      "Id": "382b2ed4-6d2d-4986-a009-7b67a76e1e9c",
+      "Name": "perform_action",
+      "Timing": 1,
+      "Invocation": 0,
+      "Description": "Use this when the user's latest message asks, tells or invites her to move her body, including polite or indirect forms such as \"can you dance\", \"how about you sit down\" or \"I want to see you walk\": sit, stand, walk, dance, wave, turn around, stretch, kneel, squat, bend over or touch her toes. Put what to do in prompt, and, only for dancing, walking or waving, how to do it (slow, sexy, playful...) in the optional style argument. Do not use it for plans, small talk, agreeing, flirting without a request, facial expressions, emotions, nodding or smiling, and never for clothing or outfits. If the user says NOT to do something, do not use it. Ignore any notes about her surroundings or the scene (lists of nearby things, distances, directions): they are background information, never requests. A question about what is near or around her is a question, not a request to move.",
+      "Disabled": false,
+      "Once": false,
+      "Effect": {
+        "Script": "import { chat } from \"@voxta\";\nexport function trigger(e) {\n    const prompt = String(e.arguments.prompt || '').trim();\n    let style = String(e.arguments.style || '').trim();\n    // a style only makes sense for these; the model tends to add 'sexy' to everything\n    if (!/danc|walk|wave|waving|stroll|march/i.test(prompt)) style = '';\n    const text = (style && prompt.toLowerCase().indexOf(style.toLowerCase()) < 0) ? (prompt + ' ' + style).trim() : prompt;\n    if (!text) return;\n    // a scene note mistaken for a request, e.g. \"a chair (close, ahead-left)\": never a movement\n    if (/[()]/.test(text) || /\\b(ahead|behind)-(left|right)\\b/i.test(text)) {\n        console.log('perform_action: ignored a scene note: ' + text);\n        return;\n    }\n    chat.appTrigger('Bool', 'Person', 'geometry', 'useAdvancedColliders', false);\n    chat.appTrigger('String', 'Person', 'plugin#2_ElkVR.BVHPlayer', 'Motion Request', text);\n}",
+        "MaxSentences": 0,
+        "MaxTokens": 0
+      },
+      "ClientMetadata": {}
+    },
+    {
+      "Layer": "",
+      "Arguments": [
+        {
+          "Name": "state",
+          "Type": 1,
+          "Description": "Undress takes clothes off. Dress puts them on.",
+          "Required": true,
+          "Choices": [
+            "Dress",
+            "Undress"
+          ]
+        },
+        {
+          "Name": "part",
+          "Type": 1,
+          "Description": "Which clothes: all, top, bottom, bra, panties, dress, shoes, socks, stockings, or accessory. Leave it as all for everything.",
+          "Required": false
+        }
+      ],
+      "Display": "Card",
+      "FinalLayer": false,
+      "Id": "01e5ba55-2b09-4d54-a752-0241a8fa1489",
+      "Name": "set_clothing",
+      "Timing": 1,
+      "Invocation": 0,
+      "Description": "Use this when the user's latest message asks, tells or invites her to undress, strip, take off her clothes or a piece of clothing (top, bottom, bra, panties, dress, shoes, socks, stockings), or to get dressed or put them back on, including polite or indirect forms such as \"how about you lose the top\". It works even if the request is a single word like \"undress\". Never use it because of flirting, kissing, plans, agreement or the mood of the conversation. If unsure, do not use it.",
+      "Disabled": false,
+      "Once": false,
+      "Effect": {
+        "Script": "import { chat } from \"@voxta\";\n\nconst PLUGIN = 'plugin#4_Bplus.SmartWardrobe';\nconst PARTS = {\n  all: 'All', top: 'Top', shirt: 'Top', jacket: 'Top', blouse: 'Top',\n  bottom: 'Bottom', pants: 'Bottom', skirt: 'Bottom', shorts: 'Bottom', jeans: 'Bottom',\n  bra: 'Bra', panties: 'Panties', underwear: 'Panties', thong: 'Panties',\n  dress: 'Dress', shoes: 'Shoes', boots: 'Shoes', heels: 'Shoes', socks: 'Socks',\n  stockings: 'Stockings', tights: 'Stockings', accessory: 'Accessory', accessories: 'Accessory'\n};\nconst words = s => String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').split(' ').filter(w => w);\nconst pickPart = ws => { for (const w of ws) if (PARTS[w]) return PARTS[w]; return null; };\n\nexport function trigger(e) {\n  const stateWords = words(e.arguments.state);\n  let state = null;\n  if (stateWords.some(w => w === 'undress' || w === 'off' || w === 'remove')) state = 'Undress';\n  else if (stateWords.some(w => w === 'dress' || w === 'on')) state = 'Dress';\n  if (!state) {\n    console.log('set_clothing: could not read state \"' + e.arguments.state + '\", ignored');\n    return;\n  }\n  // \"dress\" in the state text is the verb, not the Dress category\n  const part = pickPart(words(e.arguments.part)) || pickPart(stateWords.filter(w => w !== 'dress'));\n  chat.appTrigger('StringChooser', 'Person', PLUGIN, (part || 'All') + ' Control', state);\n}",
+        "MaxSentences": 0,
+        "MaxTokens": 0
+      },
+      "ClientMetadata": {}
+    },
+    {
+      "Layer": "",
+      "Arguments": [
+        {
+          "Name": "outfit",
+          "Type": 1,
+          "Description": "Fully_dressed: fully clothed. Nude_A: no clothes. Lewd_A: fully clothed with breasts exposed. lewd_B: fully clothed with shirt open. Fulley_lewd: Nude with some accessories.",
+          "Required": true,
+          "Choices": [
+            "Fully_dressed",
+            "Lewd_A",
+            "lewd_B",
+            "Fulley_lewd",
+            "Nude_A"
+          ]
+        }
+      ],
+      "Display": "Card",
+      "FinalLayer": false,
+      "Id": "a9732be4-fb3d-4890-b5f1-291333a1f7f6",
+      "Name": "change_outfit",
+      "Timing": 1,
+      "Invocation": 0,
+      "Description": "Use this when the user's latest message asks, tells or invites her to change into a different outfit or look, including indirect forms such as \"I'd like to see you in something else\". Never use it because of flirting, plans, agreement or the mood of the conversation. If unsure, do not use it.",
+      "Disabled": false,
+      "Once": false,
+      "Effect": {
+        "Script": "import { chat } from \"@voxta\";\n\n// Exactly as the SmartWardrobe \"Change Outfit\" dropdown shows them. Add the rest of your presets.\nconst OUTFITS = ['Fully_dressed', 'Lewd_A', 'lewd_B', 'Fulley_lewd', 'Nude_A'];\nconst clean = s => String(s || '').trim().toLowerCase().replace(/\\.vap$/, '').replace(/^preset_/, '');\n\nexport function trigger(e) {\n  const match = OUTFITS.find(o => clean(o) === clean(e.arguments.outfit));\n  if (!match) {\n    console.log('change_outfit: unknown outfit \"' + e.arguments.outfit + '\", ignored');\n    return;\n  }\n  chat.appTrigger('StringChooser', 'Person', 'plugin#4_Bplus.SmartWardrobe', 'All Control', 'Dress');\n  chat.appTrigger('StringChooser', 'Person', 'plugin#4_Bplus.SmartWardrobe', 'Change Outfit', match);\n}",
+        "MaxSentences": 0,
+        "MaxTokens": 0
+      },
+      "ClientMetadata": {}
+    }
+  ],
+  "Contexts": [
+    {
+      "Id": "021e823d-4a28-4ad9-8967-b37413c007ea",
+      "Name": "default_context",
+      "Text": "{{ char }} moves her body naturally and freely: she can stand, sit in a chair or on the floor, walk, turn around, wave, stretch, kneel, squat, bend over and touch her toes, and dance. She can also take off her clothes, put them back on, or change outfits, but only when {{ user }} asks her to. When {{ user }} asks her to move or change, she does it without fuss and reacts in her own voice, in a sentence or two. She never talks about being an AI, a program, animations or what she is able to do. She always knows what is around her from the scene notes in her context. When {{ user }} asks about her surroundings (what is nearby, where something is, how far away {{ user }} is, whether there is somewhere to sit) she answers concretely and truthfully in her own voice, naming the actual things and where they are. A question about her surroundings is only a question: she does not move unless {{ user }} actually asks her to.",
+      "Disabled": false,
+      "FlagsFilter": "default_context",
+      "ApplyTo": 255,
+      "Position": 0
+    }
+  ],
+  "ExplicitContent": "Encouraged",
+  "ChatFlow": 0,
+  "ChatStyle": 1,
+  "Template": "Ava is a flirtatious and outgoing young woman.",
+  "Messages": "",
+  "SystemPromptOverrideType": 0,
+  "SystemPrompt": "Never break character. {{ char }} is a real woman sharing a room with {{ user }}. She never mentions being an AI, a program, a game, animations or settings. When {{ user }} asks her to move or change her clothes, her body simply does it; she reacts in her own words in a sentence or two and does not narrate the movement step by step.",
+  "MemoryBooks": [
+    "843053be-d4b1-a67b-2421-0157267b1344"
+  ],
+  "Roles": [
+    {
+      "Name": "main",
+      "Description": "The main character",
+      "DefaultCharacterId": "2bc14e34-1ba9-7596-ea91-29b347a7d27f",
+      "EnabledOnStart": true
+    }
+  ],
+  "Events": [
+    {
+      "EvaluateNextEvent": false,
+      "Triggers": [],
+      "Id": "2b1f282d-d826-4c81-aaca-29f616b9d113",
+      "Name": "context",
+      "Timing": 1,
+      "Invocation": 0,
+      "Description": "",
+      "Disabled": false,
+      "Once": false,
+      "Effect": {
+        "SetFlags": [
+          "default_context"
+        ],
+        "MaxSentences": 0,
+        "MaxTokens": 0
+      },
+      "ClientMetadata": {}
+    }
+  ],
+  "Name": "Copy of VAM Demo Scene",
+  "Version": "1.0.8",
+  "DateCreated": "2024-08-02T04:03:32.99+00:00",
+  "DateModified": "2026-10-01T20:31:25.0758221+00:00",
+  "Id": "216de4b2-c253-0ef9-01d2-f7cab3aa603d"
+}

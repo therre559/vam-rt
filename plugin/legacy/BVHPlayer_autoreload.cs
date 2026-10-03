@@ -52,6 +52,8 @@ namespace ElkVR {
 	  - Watch File + Auto Reload of a BVH that another program keeps rewriting
 	  - Chain Continuous playback with Chunk Blend between files, In Place mode, Re-center
 	  - Motion Request relay (writes a request file for the external motion server)
+	  - Defaults: Auto Reload on, Watch File preset to Saves/Animation/ardy/latest_vam.bvh (the file the ARDY stream writes)
+	  - Status warning when the play mode is loop or ping-pong while watching (a stalled stream would repeat its last chunk)
 	*/
 
 public class BVHPlayer : MVRScript {
@@ -334,8 +336,9 @@ public class BVHPlayer : MVRScript {
         if(pendingQueue.Count > 0 && (bvh == null || !playing || (!reverse && frame >= bvh.nFrames - 1)))
             ActivatePending();
 
-        SetWatchStatus(string.Format("Clips loaded: {0} | queued: {1} | playing: {2}{3}", clipsLoaded, pendingQueue.Count,
-            playing ? "yes" : "no", string.IsNullOrEmpty(lastError) ? "" : " | LAST ERROR: " + lastError));
+        SetWatchStatus(string.Format("Clips loaded: {0} | queued: {1} | playing: {2}{3}{4}", clipsLoaded, pendingQueue.Count,
+            playing ? "yes" : "no", string.IsNullOrEmpty(lastError) ? "" : " | LAST ERROR: " + lastError,
+            (loopPlay || pingpongPlay) ? " | WARNING: play mode is loop/ping-pong, so a stalled stream would repeat its last chunk; use once" : ""));
     }
 
     void SetWatchStatus(string text) {
@@ -677,9 +680,9 @@ public class BVHPlayer : MVRScript {
 
 
             // ---- Auto-reload UI ----
-            uiWatchFile = new JSONStorableString("Watch File", "");
+            uiWatchFile = new JSONStorableString("Watch File", "Saves/Animation/ardy/latest_vam.bvh");
             RegisterString(uiWatchFile);
-            uiAutoReload = new JSONStorableBool("Auto Reload", false);
+            uiAutoReload = new JSONStorableBool("Auto Reload", true);
             RegisterBool(uiAutoReload);
             uiChain = new JSONStorableBool("Chain Continuous", true);
             RegisterBool(uiChain);

@@ -49,7 +49,7 @@ from pathlib import Path
 
 os.environ.setdefault("TQDM_DISABLE", "1")
 warnings.filterwarnings("ignore")
-VERSION = "ardy_stream v19 (upside-down guard that recovers, repeat requests, no-motion fallback, metrics log + settings)"
+VERSION = "ardy_stream v20 (duration guard: nothing runs forever; upside-down recovery, repeat requests, no-motion fallback, metrics log)"
 
 
 class _DropLines:
@@ -169,7 +169,7 @@ def concat_chunks(pieces, time_keys):
 class Streamer:
     """Holds the rolling motion history and produces one horizon of new frames per step()."""
 
-    def __init__(self, gen, history_frames=None, steps=None, postprocess=False, cfg_weight=(2.0, 2.0)):
+    def __init__(self, gen, history_frames=None, steps=None, postprocess=False, cfg_weight=(2.0, 2.0), pp_constraints=False):
         self.gen = gen
         self.torch = gen.torch
         self.model = gen.model
@@ -185,6 +185,8 @@ class Streamer:
         self.steps = int(steps) if steps else int(m.diffusion.num_base_steps)
         self.steps = max(1, min(self.steps, int(m.diffusion.num_base_steps)))
         self.postprocess = postprocess
+        self.pp_constraints = pp_constraints  # also give the post-processing the root plan (only with postprocess on)
+        self._pp_cset = None
         self.cfg_weight = tuple(cfg_weight)
         self.motion = None  # normalized motion tensor [1, T, D]; only the recent tail is kept
         self._text_cache = {}
@@ -272,8 +274,65 @@ class Streamer:
         self._embed(prompt)
         return 0.0 if already else time.time() - t0
 
-    def step(self, prompt):
-        """Generate one horizon of new frames. Returns (numpy_output_dict, time_keys)."""
+    def root_state(self):
+        """(x, z, vx, vz) of the last frame in the rolling history: ARDY world metres and m/s. None without history.
+        Everything in a root plan (ardy_control.py) is in this same frame."""
+        try:
+            if self.motion is None or int(self.motion.shape[1]) < 2:
+                return None
+            mr = self.model.motion_rep
+            root = mr.extract_root(mr.unnormalize(self.motion))
+            p = root[0, :, mr.slice_dict["root_pos"]]
+            x, z = float(p[-1, 0]), float(p[-1, 2])
+            px, pz = float(p[-2, 0]), float(p[-2, 2])
+            return x, z, (x - px) * self.fps, (z - pz) * self.fps
+        except Exception as e:  # never let a diagnostic take the stream down
+            self._warn_once("root_state", f"could not read her root position ({e})")
+            return None
+
+    def _warn_once(self, key, text):
+        seen = getattr(self, "_warned", None)
+        if seen is None:
+            seen = self._warned = set()
+        if key not in seen:
+            seen.add(key)
+            print(f"  WARNING: {text}")
+
+    def _constraint_tensors(self, plan, hist_len):
+        """Turn a root plan into the model's (motion_mask, observed_motion) with the recipe NVIDIA's interactive demo uses
+        (scripts/interactive_demo/gen_constraints.py): a Root2DConstraintSet -> create_conditions_from_constraints ->
+        normalize -> multiply by the mask. Returns (model_frames, mask, observed). Raises if anything is not as expected."""
+        import ardy_control as ctl
+        from ardy.constraints import Root2DConstraintSet
+
+        torch, m = self.torch, self.model
+        max_window = (int(10 * self.fps) // self.patch) * self.patch
+        model_frames, frames, xz = ctl.constraint_frames(plan, hist_len, self.horizon, self.patch, max_window)
+        if not frames:
+            raise ValueError("no waypoint falls inside the model window")
+        frame_idx = torch.tensor(frames)                                            # CPU long, as in the demo
+        root_pos_2d = torch.tensor(xz, dtype=torch.float32, device=self.device)    # [N, 2] = (x, z)
+        cset = Root2DConstraintSet(m.motion_rep.skeleton, frame_idx, root_pos_2d)
+        observed, mask = m.motion_rep.create_conditions_from_constraints(
+            [cset], length=model_frames, to_normalize=False, device=self.device)
+        observed = m.motion_rep.normalize(observed)
+        observed = observed * mask       # unobserved frames are non-zero after normalization
+        mask = mask.clone()
+        mask[:hist_len] = 0.0            # history frames are never constrained
+        observed[:hist_len] = 0.0
+        # the same waypoints, shifted to the new horizon, for the optional post-processing
+        self._pp_cset = None
+        if self.pp_constraints:
+            pf, pxz = ctl.postprocess_frames(frames, xz, hist_len, self.horizon)
+            if pf:
+                self._pp_cset = Root2DConstraintSet(m.motion_rep.skeleton, torch.tensor(pf),
+                                                    torch.tensor(pxz, dtype=torch.float32, device=self.device))
+        return model_frames, mask.unsqueeze(0), observed.unsqueeze(0)
+
+    def step(self, prompt, plan=None):
+        """Generate one horizon of new frames. Returns (numpy_output_dict, time_keys).
+        `plan` (optional, ardy_control.RootPlan) asks the root to pass through waypoints; if building the constraint fails the
+        step simply runs without it (one warning), so a bad plan can never stop the stream."""
         from ardy.postprocess import post_process_motion
         from ardy.tools import to_numpy
 
@@ -281,14 +340,22 @@ class Streamer:
         feat, mask = self._embed(prompt)
         hist = self.motion
         hist_len = 0 if hist is None else int(hist.shape[1])
-        num_frames = hist_len + self.horizon
+        num_frames = hist_len + self.horizon      # what comes back (history + the new horizon)
+        model_frames, motion_mask, observed_motion = num_frames, None, None
+        self._pp_cset = None
+        if plan:
+            try:
+                model_frames, motion_mask, observed_motion = self._constraint_tensors(plan, hist_len)
+            except Exception as e:
+                self._warn_once("constraints", f"root constraint not applied ({type(e).__name__}: {e}); generating without it")
+                model_frames, motion_mask, observed_motion = num_frames, None, None
 
         with torch.no_grad():
             samples = m.autoregressive_step(
-                num_frames=num_frames,
+                num_frames=model_frames,
                 num_denoising_steps=self.steps,
-                motion_mask=None,
-                observed_motion=None,
+                motion_mask=motion_mask,
+                observed_motion=observed_motion,
                 cfg_weight=self.cfg_weight,
                 texts=None,
                 text_feat=feat,
@@ -308,7 +375,7 @@ class Streamer:
                 new["root_positions"],
                 new["foot_contacts"],
                 m.skeleton,
-                constraint_lst=None,
+                constraint_lst=[self._pp_cset] if self._pp_cset is not None else None,
             )
             new.update(corrected)
 
@@ -445,17 +512,59 @@ class State:
 SAFE_PROMPT = "A person stands upright."
 
 
-def _write_idle(path):
-    """Make the prompt file say what the stream is really doing again (atomic, so the watcher never sees half a line)."""
+class RunawayGuard:
+    """The last part of a plan is open-ended ("hold until changed"). A pose settles by itself, but a movement (a walk, a dance, a
+    wiggle) never does, so if one gets through it would run until something interrupts it. This watches the open-ended part: if it
+    keeps moving (above `moving_speed` m/s) for `limit_s` seconds without ever settling, update() says so and the caller falls back
+    to a safe hold. Timed parts are not watched (they end by themselves). limit_s = 0 turns it off."""
+
+    def __init__(self, limit_s, moving_speed=0.12, calm_chunks=2):
+        self.limit_s = limit_s
+        self.moving_speed = moving_speed
+        self.calm_chunks = calm_chunks
+        self.reset()
+
+    def reset(self):
+        self.key = None
+        self.moving_s = 0.0
+        self.calm = 0
+
+    def update(self, key, open_ended, speed, chunk_s):
+        """key identifies the part being played (its prompt). Returns True when it has been moving for too long."""
+        if not open_ended or self.limit_s <= 0:
+            self.reset()
+            return False
+        if key != self.key:
+            self.reset()
+            self.key = key
+        if speed is None:
+            return False
+        if speed >= self.moving_speed:
+            self.moving_s += chunk_s
+            self.calm = 0
+        else:
+            self.calm += 1
+            if self.calm >= self.calm_chunks:   # it really settled: start counting again from zero
+                self.moving_s = 0.0
+        return self.moving_s >= self.limit_s
+
+
+def _write_prompt(path, text):
+    """Make the prompt file say `text` (atomic, so the watcher never sees half a line)."""
     if not path:
         return
     try:
         tmp = str(path) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            f.write(SAFE_PROMPT + "\n")
+            f.write(text + "\n")
         os.replace(tmp, path)
     except OSError:
         pass
+
+
+def _write_idle(path):
+    """Make the prompt file say what the stream is really doing again."""
+    _write_prompt(path, SAFE_PROMPT)
 
 
 def recover_from_block(state, streamer, blocked, prompt_file=None):
@@ -519,6 +628,8 @@ def worker(streamer, args, state):
         except OSError:
             pass
 
+    guard = RunawayGuard(args.runaway_seconds)
+    settled_prompt = None   # the last pose that really settled: where the duration guard sends her back to
     while not state.stop:
         # start the next chunk early enough that it is ready when the current one ends
         remaining = est_end - time.monotonic()
@@ -532,6 +643,7 @@ def worker(streamer, args, state):
                 state.reset = False
                 hold_prompt, still_n, off_hist = None, 0, []
         prompt, fresh, hold = state.take()
+        open_ended = hold               # the last part of the plan: "until changed"
         hold = hold and not state.free  # from here on `hold` means "may be anchored"
         if not prompt:
             time.sleep(0.05)
@@ -571,6 +683,13 @@ def worker(streamer, args, state):
             continue
         blocked = 0
         speed = joint_speed(merged, fps)
+        if guard.update(prompt, open_ended, speed, chunk_dur):
+            fb = settled_prompt or SAFE_PROMPT
+            print(f"  duration guard: '{prompt}' kept moving for {args.runaway_seconds:.0f}s without settling; "
+                  f"going back to '{fb}'")
+            state.set_plan([[fb, None]], fb)
+            _write_prompt(args.prompt_file, fb)
+            guard.reset()
         fb = watchdog(state, prompt, hold, speed, dead, args.dead_speed, args.dead_chunks)
         if fb:
             print(f"  no-motion watchdog: '{prompt}' produced no movement for {args.dead_chunks} chunks "
@@ -593,6 +712,8 @@ def worker(streamer, args, state):
         elif hold and not streamer.anchored:
             still_n = 0
         streamer.end_chunk(hold, bool(args.hold_settle) and still_n >= args.hold_settle, pose)
+        if hold and streamer.anchored:
+            settled_prompt = prompt   # she has really settled into this pose: it is a safe place to return to
         t_exp = None
         for attempt in range(5):  # the model's history already moved on, so a lost chunk means a jump
             try:
@@ -665,6 +786,9 @@ def clean_prompt(line):
 _AT = re.compile(r"\s*@\s*(\d+(?:\.\d+)?)\s*s?\s*$", re.I)
 
 
+MAX_PART_SECONDS = 180   # no single timed part may last longer than this, whatever the prompt file says
+
+
 def parse_plan(text, chunk_dur, default_seconds):
     """'A >> B' -> [[A, n_chunks], [B, None]]. '@3' after a non-final part sets its length in seconds."""
     parts = [x.strip() for x in text.split(">>")]
@@ -683,7 +807,7 @@ def parse_plan(text, chunk_dur, default_seconds):
         if last:
             steps.append([prompt, None])
         else:
-            sec = seconds if seconds is not None else default_seconds
+            sec = min(seconds if seconds is not None else default_seconds, MAX_PART_SECONDS)
             steps.append([prompt, max(1, math.ceil(sec / chunk_dur - 1e-9))])
     if steps and steps[-1][1] is not None:  # a trailing action with no hold state: just keep it
         steps[-1][1] = None
@@ -833,6 +957,9 @@ def main():
                    help="Append one line per chunk (time, motion m/s, root y, hold, prompt) here; used by ardy_lab.py")
     p.add_argument("--dead-speed", type=float, default=0.05,
                    help="Below this joint speed (m/s) a chunk counts as 'no movement' for the fallback watchdog")
+    p.add_argument("--runaway-seconds", type=float, default=60,
+                   help="duration guard: an open-ended movement that keeps moving this long without settling is cut off and she "
+                        "goes back to her last settled pose (0 = off)")
     p.add_argument("--dead-chunks", type=int, default=3,
                    help="Consecutive no-movement chunks before an activity switches to its fallback prompt (0 = off)")
     p.add_argument("--allow-inverted", action="store_true",
