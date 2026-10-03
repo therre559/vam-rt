@@ -16,6 +16,8 @@ reports what she would do to stay near you. See docs/ARCHITECTURE.md for the who
   probe measures it. Docs: docs/LOCOMOTION.md.
 - **Follow (dry run):** reports what she would do to stay within reach of you (distance, obstacles, ground, allowed area). She does not move yet.
   Docs: docs/FOLLOW.md.
+- **Typed moves:** `/walk 3`, `/goto 2 4`, `/home`, `/stop` in the stream window make her really walk, to test the whole chain before a live follower.
+  Docs: docs/LIVE_TEST.md.
 
 ## Layout
 - plugin/   the VaM side (C#). plugin/VaMRT is the Senses plugin; plugin/legacy holds the patched BVH Player we run today; plugin/tests compile-checks the plugin outside VaM.

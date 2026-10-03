@@ -5,6 +5,8 @@
       -> request file -> motion_prompter.py (fast path or LLM, gives every movement a lifetime) -> prompt.txt
       -> ardy_stream.py (ARDY generates 2 s chunks) -> latest_vam.bvh -> BVH Player plays it
 
+    typed moves (stream console: /walk /goto /home /stop) -> move_control + steer_plan -> root-path constraint -> same stream -> BVH (In Place off: she travels)
+
     VaMRT_Senses (Person atom) --> text snapshot ----------> Voxta "Context (Slot N)"      (what she knows about her surroundings)
                                --> approach / leave / stare -> Voxta "/event", and "reactions" that call any plugin action
                                --> Follow (dry run): what she would do to stay near the user (reports only)
@@ -24,6 +26,8 @@ so the follower sends paths from a steering planner (`server/ardy_control.py`) t
 
 ## Direction
 1. **Senses** (done, growing): a VaM-side plugin that builds a compact text snapshot of the world and sends it on change. CPU only, no GPU cost.
+2a. **Go to an object and sit** (next): while she stands still the plugin computes a relative "go ahead / right" to a point in front of a chair from the scene (no lag problem, she is
+   not moving), the stream walks her there, she turns so the chair is behind her, and sits. Needs a command channel from the plugin to the stream and the obstacle checks on the path.
 2. **Follow**: dry run done; next the stream consumes the lease command, the plugin applies root travel with an emergency stop; then Voxta can say
    "walk with me" / "stop".
 3. **Mind**: an autonomy loop that turns the snapshot and her goals into an intent, plus instant reflexes in VaM.

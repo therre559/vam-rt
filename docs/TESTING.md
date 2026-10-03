@@ -33,7 +33,10 @@ name. Do the same for `Watch File` to check the BVH Player.
       cd server && python tests\test_gait_metrics.py
       cd server && python tests\test_probe_logic.py
       cd server && python tests\test_stream_guard.py
+      cd server && python tests\test_move_control.py
+      cd server && python tests\test_stream_moves.py
       cd server && python motion_prompter.py --selftest
 
   Every one ends with "ALL GOOD" (the selftest with "all good").
 - **Real model, standalone (10-15 s):** `constraint_probe.py`, see LOCOMOTION.md.
+- **Real movement in VaM:** typed moves, see LIVE_TEST.md.

@@ -1,4 +1,4 @@
-# Senses v0.4.0
+# Senses v0.4.1
 
 A VaM plugin for a Person atom. About twice a second it reads the scene (CPU only) and writes a short description:
 
@@ -100,6 +100,9 @@ Switch it off with "Include E-Motion mood".
 Switch on **Follow (dry run: only reports)** and the **Follow report** box shows what she would do to stay within reach of you: walk (how far
 ahead / to the side), or stand (and why), checking your distance, obstacles on the way, ground ahead and an allowed area. Nothing is sent and she
 does not move yet. The full description, settings and a ten-minute test are in FOLLOW.md.
+The **Position report** box (always on) shows her hip position in VaM world metres, how far she is from an origin you set with **Set origin here**, and which way she
+faces. It is what you compare with the stream's `/where` during the live movement test (LIVE_TEST.md). Her position is her hips, because with In Place off in the BVH
+Player the hips travel while the base control stays where it was.
 
 ## E-Motion setup
 E-Motion needs its preset files (`Custom/E-Motion/Presets/...`). If VaM logs "E-Motion_Defaults.json not found", the package is not installed
@@ -120,6 +123,7 @@ can fight the animation; set its Idle sliders to 0 if you see jitter.
   in the chat history. Use a longer "Min seconds between sends" (10 or more) so history does not fill up with scene notes.
 
 ## Changelog
+- 0.4.1  Follow and the new Position report measure her at the hips; "Set origin here". Typed moves are in the stream (LIVE_TEST.md).
 - 0.4.0  Follow (dry run): reports what she would do to stay within reach of the user (distance, obstacles, ground, allowed area). See FOLLOW.md.
 - 0.3.2  The plugin now offers its own callable actions (a self-test for reactions and hooks for Timeline), a clearer "nothing chosen" message,
          and the E-Motion controls in the Debug numbers. BVH Player: Auto Reload defaults to on and the Watch File is pre-filled with the path the

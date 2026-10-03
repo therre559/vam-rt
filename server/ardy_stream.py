@@ -49,7 +49,7 @@ from pathlib import Path
 
 os.environ.setdefault("TQDM_DISABLE", "1")
 warnings.filterwarnings("ignore")
-VERSION = "ardy_stream v20 (duration guard: nothing runs forever; upside-down recovery, repeat requests, no-motion fallback, metrics log)"
+VERSION = "ardy_stream v22 (typed moves: /walk /goto /home /stop /speed /accel; duration guard; upside-down recovery, repeat requests, no-motion fallback)"
 
 
 class _DropLines:
@@ -90,6 +90,10 @@ if "--show-warnings" not in sys.argv:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ardy_to_vam as a2v  # noqa: E402  (reuses ArdyGenerator, save_npz, rename_bvh_text, ...)
+try:
+    import move_control  # noqa: E402  (typed moves)
+except ImportError:      # an incomplete install must not stop the stream; only the typed moves are lost
+    move_control = None
 
 PICKUP_DELAY = 0.10  # the VaM plugin polls every 0.1 s
 
@@ -113,9 +117,14 @@ def _joint_indices(model):
     """Indices of the joints the safety check needs (None if the skeleton doesn't expose them)."""
     try:
         bi = model.skeleton.bone_index
-        return {"head": bi["Head"], "rfoot": bi["RightFoot"], "lfoot": bi["LeftFoot"]}
+        idx = {"head": bi["Head"], "rfoot": bi["RightFoot"], "lfoot": bi["LeftFoot"]}
     except Exception:
         return None
+    try:   # the hips give her facing direction (optional: only the moves need them)
+        idx["lhip"], idx["rhip"] = bi["LeftUpLeg"], bi["RightUpLeg"]
+    except Exception:
+        pass
+    return idx
 
 
 def last_pose(output):
@@ -197,9 +206,13 @@ class Streamer:
         self.anchor_pose = None  # joint positions of the frame the anchor ends on
         self.idx = _joint_indices(self.model)
         self._backup = None
+        self._face = None        # (x, z) unit vector: where her pelvis faced at the end of the last chunk (ARDY world)
+        self._face_sign = None   # which perpendicular of the hip line is "forward"; learned once, the session starts facing +Z
+        self._face_backup = None
 
     def reset(self):
         self.motion = None
+        self._face = None
         self.anchor = None
         self.anchored = False
         self.anchor_pose = None
@@ -228,12 +241,14 @@ class Streamer:
         """Undo the chunk that was just generated (history, anchor), as if it never happened."""
         if self._backup is not None:
             self.motion, self.anchor, self.anchored, self.anchor_pose = self._backup
+            self._face = self._face_backup
 
     def begin_chunk(self, hold):
         """Call before generating a file's worth of steps. While holding a settled pose, every chunk
         restarts from the same saved anchor instead of from the previous chunk's output, so small
         errors can't accumulate. Not holding (or no anchor yet) = normal free-running generation."""
         self._backup = (self.motion, self.anchor, self.anchored, self.anchor_pose)
+        self._face_backup = self._face
         if not hold:
             self.drop_anchor()
         elif self.anchor is not None:
@@ -289,6 +304,39 @@ class Streamer:
         except Exception as e:  # never let a diagnostic take the stream down
             self._warn_once("root_state", f"could not read her root position ({e})")
             return None
+
+    def root_pose(self):
+        """(x, z, heading, vx, vz) of her root at the end of the last generated chunk, in ARDY world metres and m/s. The heading is
+        0 for +Z and grows towards +X. Before anything is generated she is at the origin facing +Z. NOTE: this is the END of the
+        last chunk, which VaM plays 2-4 s later; it is only where she is on screen while she stands still."""
+        st = self.root_state()
+        x, z, vx, vz = st if st else (0.0, 0.0, 0.0, 0.0)
+        f = self._face if self.motion is not None else None
+        return x, z, (math.atan2(f[0], f[1]) if f else 0.0), vx, vz
+
+    def _update_face(self, out):
+        """Remember where her pelvis faces in the last frame of `out` (from the hip joints)."""
+        try:
+            if not self.idx or "lhip" not in self.idx:
+                return
+            pj = out["posed_joints"][0]
+
+            def forward_at(t):
+                l, r = pj[t][self.idx["lhip"]], pj[t][self.idx["rhip"]]
+                dx, dz = float(r[0] - l[0]), float(r[2] - l[2])
+                n = math.hypot(dx, dz)
+                return (-dz / n, dx / n) if n > 1e-6 else None
+
+            if self._face_sign is None:     # a session starts facing +Z: choose the sign so the first frames do
+                first = [v for v in (forward_at(t) for t in range(min(5, len(pj)))) if v]
+                if first:
+                    self._face_sign = 1.0 if sum(v[1] for v in first) >= 0 else -1.0
+            if self._face_sign is not None:
+                f = forward_at(len(pj) - 1)
+                if f:
+                    self._face = (self._face_sign * f[0], self._face_sign * f[1])
+        except Exception as e:  # a diagnostic must never take the stream down
+            self._warn_once("face", f"could not read her facing direction ({e})")
 
     def _warn_once(self, key, text):
         seen = getattr(self, "_warned", None)
@@ -368,6 +416,7 @@ class Streamer:
             full = m.motion_rep.inverse(unnorm, is_normalized=False)
 
         new, time_keys = slice_time(full, hist_len, num_frames)
+        self._update_face(new)
 
         if self.postprocess:
             corrected = post_process_motion(
@@ -602,6 +651,24 @@ def watchdog(state, prompt, hold, speed, dead, dead_speed, dead_chunks):
     return None
 
 
+def apply_typed_move(state, streamer, prompt, fresh, hold, open_ended, now=None):
+    """A running typed move (/walk, /goto ...) overrides the text for this chunk and supplies a root plan; the normal prompt flow
+    carries on underneath and takes over again when the move is over. Returns (prompt, plan, fresh, hold, open_ended)."""
+    mover = getattr(state, "mover", None)
+    if mover is None or not mover.active:
+        return prompt, None, fresh, hold, open_ended
+    pose = streamer.root_pose()
+    mv = mover.next_chunk(pose, time.monotonic() if now is None else now)
+    if mv is None:
+        print(f"  move finished: {mover.result(pose)}; back to the normal prompts")
+        streamer.drop_anchor()
+        return prompt, None, fresh, hold, open_ended
+    text, plan, note = mv
+    print(f"  move: {note}  | ARDY pose x {pose[0]:.2f} z {pose[1]:.2f}, facing {math.degrees(pose[2]):.0f} deg")
+    # a move is never a held pose and never open-ended, so neither the anchor nor the duration guard apply to it
+    return text, plan, False, False, False
+
+
 def worker(streamer, args, state):
     fps = streamer.fps
     steps_per_file = max(1, round(args.chunk_seconds * fps / streamer.horizon))
@@ -645,6 +712,7 @@ def worker(streamer, args, state):
         prompt, fresh, hold = state.take()
         open_ended = hold               # the last part of the plan: "until changed"
         hold = hold and not state.free  # from here on `hold` means "may be anchored"
+        prompt, move_plan, fresh, hold, open_ended = apply_typed_move(state, streamer, prompt, fresh, hold, open_ended)
         if not prompt:
             time.sleep(0.05)
             continue
@@ -662,7 +730,7 @@ def worker(streamer, args, state):
         streamer.begin_chunk(hold)
         pieces, tkeys = [], set()
         for _ in range(steps_per_file):
-            piece, tkeys = streamer.step(prompt)
+            piece, tkeys = streamer.step(prompt, move_plan)
             pieces.append(piece)
         t_gen = time.time() - t0
         merged = concat_chunks(pieces, tkeys)
@@ -934,6 +1002,73 @@ def slug(text):
     return a2v.slugify(text, 24)
 
 
+MOVE_HELP = """Typed moves (ARDY world: metres, she starts at the origin facing +Z; give them while she STANDS STILL):
+  /walk <m>         walk this far straight ahead
+  /goto <x> <z>     walk to a point
+  /go <fwd> <right> walk to a point this far ahead and to her right (negative = behind / left)
+  /home             walk back to the origin (where she started)
+  /stop             brake and stand
+  /speed <m/s>      walking speed (0.5 - 1.6)
+  /accel <m/s2>     how hard she speeds up and brakes (0.5 - 2.0; lower = gentler; short moves are the most abrupt)
+  /where            print where ARDY thinks she is (compare with the Senses plugin's position report in VaM)
+A move ends by itself on arrival, or after a timeout; the farthest one move may go is --max-move."""
+
+
+def handle_move_command(line, streamer, state):
+    """Typed moves. Returns True if the line was one of them (handled, even if refused)."""
+    parts = line.split()
+    cmd = parts[0].lower() if parts else ""
+    if cmd not in ("/walk", "/goto", "/go", "/home", "/stop", "/speed", "/accel", "/where", "/moves"):
+        return False
+    mover = getattr(state, "mover", None)
+    if cmd == "/moves":
+        print(MOVE_HELP)
+        return True
+    pose = streamer.root_pose()
+    if cmd == "/where":
+        print(f"  ARDY pose: x {pose[0]:.2f} z {pose[1]:.2f}, facing {math.degrees(pose[2]):.0f} deg (0 = +Z, positive towards +X), "
+              f"speed {math.hypot(pose[3], pose[4]):.2f} m/s; move: {mover.state if mover else 'off'}")
+        return True
+    if mover is None:
+        print("  moves are switched off (start the stream without --max-move 0)")
+        return True
+    now = time.monotonic()
+    try:
+        nums = [float(x) for x in parts[1:]]
+    except ValueError:
+        print("  numbers only, for example /walk 3")
+        return True
+    if cmd == "/stop":
+        ok, msg = mover.stop(pose, now)
+    elif cmd == "/home":
+        ok, msg = mover.goto(pose, (0.0, 0.0), now, "home")
+    elif cmd == "/speed":
+        if len(nums) != 1:
+            print("  usage: /speed 1.0")
+            return True
+        print(f"  walking speed {mover.set_speed(nums[0]):g} m/s")
+        return True
+    elif cmd == "/accel":
+        if len(nums) != 1:
+            print("  usage: /accel 1.0")
+            return True
+        print(f"  acceleration {mover.set_accel(nums[0]):g} m/s^2")
+        return True
+    elif cmd == "/walk" and len(nums) == 1 and nums[0] > 0:
+        ok, msg = mover.walk(pose, nums[0], now)
+    elif cmd == "/goto" and len(nums) == 2:
+        ok, msg = mover.goto(pose, (nums[0], nums[1]), now)
+    elif cmd == "/go" and len(nums) == 2:
+        ok, msg = mover.go_relative(pose, nums[0], nums[1], now)
+    else:
+        print("  usage: /walk 3   /goto 2 4   /go 2 1   /home   /stop   (/moves for help)")
+        return True
+    if ok and cmd != "/stop" and math.hypot(pose[3], pose[4]) > 0.3:
+        msg += "  (she is moving now: ARDY's pose is ahead of what is on screen, so this goal may be off; give moves while she stands)"
+    print(f"  {'OK' if ok else 'refused'}: {msg}")
+    return True
+
+
 def main():
     p = argparse.ArgumentParser(description="ARDY continuous streaming -> VaM BVH")
     p.add_argument("--prompt", default="A person stands still.", help="Initial prompt")
@@ -957,6 +1092,11 @@ def main():
                    help="Append one line per chunk (time, motion m/s, root y, hold, prompt) here; used by ardy_lab.py")
     p.add_argument("--dead-speed", type=float, default=0.05,
                    help="Below this joint speed (m/s) a chunk counts as 'no movement' for the fallback watchdog")
+    p.add_argument("--max-move", type=float, default=8.0,
+                   help="typed moves (/walk /goto /home): the farthest one move may ask for, metres (default 8, 0 = moves off)")
+    p.add_argument("--move-speed", type=float, default=1.0, help="walking speed of typed moves, m/s (default 1.0; /speed changes it)")
+    p.add_argument("--move-accel", type=float, default=1.0,
+                   help="how hard typed moves speed up and brake, m/s^2 (default 1.0; lower = gentler starts and stops; /accel changes it)")
     p.add_argument("--runaway-seconds", type=float, default=60,
                    help="duration guard: an open-ended movement that keeps moving this long without settling is cut off and she "
                         "goes back to her last settled pose (0 = off)")
@@ -1004,6 +1144,16 @@ def main():
     for prompt, _ in steps:
         streamer.prefetch(prompt)  # encode BEFORE streaming starts, so chunk 1 isn't slowed
     state = State(steps, describe_plan(steps) + ("  [free]" if free else ""), free)
+    state.mover = (move_control.MoveDriver(streamer.fps, speed=args.move_speed, max_move=args.max_move, max_accel=args.move_accel)
+                   if (move_control is not None and args.max_move > 0) else None)
+    if state.mover is not None:    # encode the move texts now: the first move used to pay for it with a playback gap
+        try:
+            for text in (move_control.WALK, move_control.STAND):
+                streamer._embed(text)
+        except Exception as e:
+            print(f"  (could not pre-encode the move texts: {e})")
+    if move_control is None and args.max_move > 0:
+        print("NOTE: typed moves are unavailable: move_control.py was not found next to this script (run tools\\deploy.bat).")
     print(f"Starting prompt ({source}): {state.raw()}  (encoded in {(time.time()-t0)*1000:.0f} ms)")
 
     t = threading.Thread(target=worker, args=(streamer, args, state), daemon=True)
@@ -1016,6 +1166,9 @@ def main():
         print(f"Watching prompt file: {pf}  (edit the first line and save)")
     print(VERSION)
     print("Type a prompt to change what the character does. /reset to restart, quit to exit.")
+    if state.mover is not None:
+        print("Moves (she must be standing still; needs In Place OFF in the BVH Player to travel): /walk 3  /goto 2 4  /go 2 1  /home  "
+              "/stop  /speed 1.0  /accel 1.0  /where   (/moves for help)")
     while True:
         try:
             line = input("> ").strip()
@@ -1029,6 +1182,8 @@ def main():
             with state.lock:
                 state.reset = True
             print("  history cleared")
+            continue
+        if handle_move_command(line, streamer, state):
             continue
         apply_line(streamer, state, line, chunk_dur, args.action_seconds, "typed")
     state.stop = True

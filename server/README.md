@@ -15,3 +15,4 @@ Locomotion experiments (see docs/LOCOMOTION.md):
 - `gait_metrics.py`       facing versus travel, turning and foot skate (used by the probe); `tests/test_gait_metrics.py`
 - `ardy_control.py` also has `steer_plan`: a heading-aware walk to a point (limited turn rate, slow while misaligned, brakes to stop)
 - `constraint_probe.py` flags: `--postprocess` and `--pp-constraints` try ARDY's post-processing (see docs/LOCOMOTION.md)
+- `move_control.py`       typed moves for the live test (`/walk`, `/goto`, `/go`, `/home`, `/stop`); `tests/test_move_control.py`, `tests/test_stream_moves.py`

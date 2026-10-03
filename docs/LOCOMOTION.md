@@ -47,10 +47,19 @@ The steering planner's first version looped around the goal (0.3 m wander, 500+ 
 simulation a goal inside the walker's turning circle was orbited forever. Fixed with the arrival radius and a distance-limited speed while turning;
 `tests/test_control.py` checks 720 simulated starts (all directions, distances, headings, speeds): all arrive, stop and never orbit.
 
+## Live results (typed moves in VaM, see LIVE_TEST.md)
+ARDY's pose after each move was within 2-3 cm of the goal. In VaM she walks, turns on the way, and `/speed` changes look natural; 1.2 m/s looks like a jog on Ava and 0.8 natural
+(default now 1.0); she faces her direction of travel and stays that way; she walks through a chair (VaM's physics does not block the hip controllers); one short first move was
+followed by a few seconds of crouching (text pre-encoding and gentler acceleration added).
+
 ## Not yet known
 - How it looks in VaM: the physics body walking with In Place off, turn naturalness, visible foot sliding (watch the `probe_*.bvh` files).
 - Whether ARDY's post-processing (`--postprocess`, `--pp-constraints`) reduces the sliding. The flags exist in the probe; not yet measured.
 - Behaviour with a moving target (a user who walks away mid-chunk) and the 2 s chunk lag.
+- Whether the BVH Player's travel (In Place off, chunks chained in world coordinates) matches ARDY's displacement in distance and direction. The Position report numbers
+  from the live test will show this (still to send).
+- How to face a given direction on arrival. The demo's waypoint keyframes carry an optional heading, but `ardy/constraints.py` has not been read to see whether the model-level
+  constraint accepts it.
 
 ## Tools in this repo
 - `server/ardy_control.py`: plans. `velocity_plan`, `goto_plan` (straight, brakes to stop), `steer_plan` (heading-aware), `constraint_frames`,
@@ -59,7 +68,9 @@ simulation a goal inside the walker's turning circle was orbited forever. Fixed 
   the constraint cannot be built the step runs without it and prints one warning. `Streamer.root_state()` reports where she is and how fast she moves.
 - `server/gait_metrics.py`: facing vs travel, turning (averaged over a second, so stride sway does not count), foot skate (toes).
 - `server/constraint_probe.py`: the experiment below. `tests/test_probe_logic.py` checks it with a good walker and a moonwalker.
-- The Senses plugin's Follow (dry run), which decides what she would do: see FOLLOW.md.
+- `server/move_control.py`: typed moves (`/walk`, `/goto`, `/go`, `/home`, `/stop`) planned with `steer_plan`, closed loop on ARDY's pose; each move ends by itself
+  (arrival, timeout, or brake). Console commands in the stream (v21). Tests: `tests/test_move_control.py`, `tests/test_stream_moves.py`.
+- The Senses plugin's Follow (dry run), which decides what she would do, and its position report: see FOLLOW.md and LIVE_TEST.md.
 
 ## Running the probe
 From the ARDY folder, with the `ardy` environment active (VaM, Voxta and the stream do not need to be, and should be closed). It takes 10-15 seconds.

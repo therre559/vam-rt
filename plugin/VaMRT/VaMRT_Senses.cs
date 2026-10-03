@@ -1,5 +1,5 @@
 // =============================================================================
-// VaM-RT Senses  v0.4.0
+// VaM-RT Senses  v0.4.1
 // =============================================================================
 // Part of the VaM-RT project: https://github.com/therre559/vam-rt
 // License: to be decided before the first public release (see the repository).
@@ -17,7 +17,8 @@
 //   plugin when the user approaches, leaves or stares, e.g. play a Timeline clip), and read the mood
 //   from the E-Motion plugin when it is loaded on the same atom.
 //   Follow (dry run): checks the distance to the user, obstacles, ground and an allowed area, and REPORTS what she would
-//   do to stay within reach. Nothing is sent and she does not move yet.
+//   do to stay within reach. Nothing is sent and she does not move yet. Her position is measured at her HIPS (with In Place
+//   off in the BVH Player the hips travel and the base control stays behind), and a position report shows how far she has moved.
 //
 // Tagging atoms (optional): put tags in square brackets in the atom's name, e.g.
 //   "Armchair [sit]"   can be sat on        "Desk [surface]"  a surface
@@ -45,7 +46,7 @@ namespace VaMRT
     // -------------------------------------------------------------------------
     public class Senses : MVRScript
     {
-        private const string VERSION = "0.4.0";
+        private const string VERSION = "0.4.1";
         private const string DeliverySlot = "Context slot";
         private const string DeliverySecret = "Hidden chat message";
 
@@ -73,9 +74,11 @@ namespace VaMRT
         // follow (dry run)
         private JSONStorableBool _followOn, _followGround;
         private JSONStorableFloat _followMin, _followMax, _followPref, _followSpeed, _followArea;
-        private JSONStorableString _followText;
+        private JSONStorableString _followText, _odoText;
         private float _anchorX, _anchorZ;
         private bool _hasAnchor;
+        private float _odoX, _odoZ;       // the odometer's origin: where she stood when it was zeroed
+        private bool _hasOdo;
         private float _emotionCheckTime = -100f;
         private string _lastEventText = "none yet";
         // read-only displays
@@ -182,6 +185,7 @@ namespace VaMRT
                 _followGround = new JSONStorableBool("Follow: require ground ahead", true);
                 RegisterBool(_followGround);
                 _followText = new JSONStorableString("Follow report", "Follow is off.");
+                _odoText = new JSONStorableString("Position report", "(waiting for the first reading)");   // not saved: it is a live readout
 
                 _snapshotText = new JSONStorableString("Snapshot", "(waiting for the first reading)");
                 _statusText = new JSONStorableString("Status", "");
@@ -288,7 +292,7 @@ namespace VaMRT
             CreateSlider(_followSpeed, false);
             CreateSlider(_followArea, false);
             CreateToggle(_followGround, false).height = 50f;
-            CreateButton("Follow: set the area centre here", false).button.onClick.AddListener(delegate { SetAnchor(); });
+            CreateButton("Set origin here (follow area centre and position report)", false).button.onClick.AddListener(delegate { SetAnchor(); });
             CreateSpacer(false).height = 10f;
 
             UIDynamicButton sendBtn = CreateButton("Send snapshot now", false);
@@ -305,6 +309,8 @@ namespace VaMRT
             snap.height = 330f;
             UIDynamicTextField status = CreateTextField(_statusText, true);
             status.height = 110f;
+            UIDynamicTextField odo = CreateTextField(_odoText, true);
+            odo.height = 130f;
             UIDynamicTextField follow = CreateTextField(_followText, true);
             follow.height = 230f;
             UIDynamicTextField debug = CreateTextField(_debugText, true);
@@ -494,7 +500,7 @@ namespace VaMRT
             int max = (int)Math.Round(_maxObjects.val);
             for (int i = 0; i < found.Count && i < max; i++) d.Objects.Add(found[i]);
 
-            UpdateFollow(rootPos, fwd, cam != null, cam != null ? cam.transform.position : rootPos, scale);
+            UpdateFollow(rootPos, hipPos, fwd, cam != null, cam != null ? cam.transform.position : rootPos, scale);
 
             _debugText.val = "hip height " + hipH.ToString("0.00") + " m (standing reference " + _standHip.ToString("0.00") + ")\n" +
                              "torso angle " + torso.ToString("0") + " deg, foot spread " + spread.ToString("0.00") + " m\n" +
@@ -833,22 +839,37 @@ namespace VaMRT
 
         private void SetAnchor()
         {
-            FreeControllerV3 root = containingAtom.mainController;
-            if (root == null) { _statusText.val = "Cannot set the area centre yet: body controllers not found."; return; }
-            _anchorX = root.transform.position.x;
-            _anchorZ = root.transform.position.z;
+            if (_hip == null) { _statusText.val = "Cannot set the origin yet: body controllers not found."; return; }
+            _anchorX = _hip.transform.position.x;       // her hips: with In Place off they are the part of her that travels
+            _anchorZ = _hip.transform.position.z;
             _hasAnchor = true;
-            _statusText.val = "Follow area centre set to where she stands now.";
+            _odoX = _anchorX; _odoZ = _anchorZ; _hasOdo = true;
+            _statusText.val = "Origin set to where she stands now (follow area centre and position report).";
         }
 
-        private void UpdateFollow(Vector3 rootPos, Vector3 fwd, bool haveUser, Vector3 userPos, float scale)
+        private void UpdateOdometer(Vector3 selfPos, Vector3 fwd)
         {
+            if (!_hasOdo) { _odoX = selfPos.x; _odoZ = selfPos.z; _hasOdo = true; }
+            float dx = selfPos.x - _odoX, dz = selfPos.z - _odoZ;
+            float heading = (float)Math.Atan2(fwd.x, fwd.z) * 57.29578f;
+            _odoText.val = "POSITION (her hips, VaM world metres): x " + selfPos.x.ToString("0.00") + ", z " + selfPos.z.ToString("0.00") + "\n" +
+                           "Since the origin: " + FollowLogic.Dist(selfPos.x, selfPos.z, _odoX, _odoZ).ToString("0.00") + " m  (dx " +
+                           dx.ToString("+0.00;-0.00") + ", dz " + dz.ToString("+0.00;-0.00") + ")\n" +
+                           "Facing: " + heading.ToString("0") + " deg (0 = world +Z, positive towards +X)\n" +
+                           "Press 'Set origin here' while she stands to zero it, then compare with the stream's /where";
+        }
+
+        private void UpdateFollow(Vector3 rootPos, Vector3 hipPos, Vector3 fwd, bool haveUser, Vector3 userPos, float scale)
+        {
+            // Her place on the floor is her HIPS, at the floor level of her base control.
+            Vector3 selfPos = new Vector3(hipPos.x, rootPos.y, hipPos.z);
+            UpdateOdometer(selfPos, fwd);
             if (!_followOn.val)
             {
                 _followText.val = "Follow is off. When on it only REPORTS what she would do to stay within reach of you; nothing is sent and she does not move.";
                 return;
             }
-            if (!_hasAnchor) { _anchorX = rootPos.x; _anchorZ = rootPos.z; _hasAnchor = true; }
+            if (!_hasAnchor) { _anchorX = selfPos.x; _anchorZ = selfPos.z; _hasAnchor = true; }
             if (!haveUser) { _followText.val = "FOLLOW (dry run): no camera, so she cannot see where you are."; return; }
             try
             {
@@ -861,7 +882,7 @@ namespace VaMRT
                 s.RequireGround = _followGround.val;
 
                 FollowLogic.Input i = new FollowLogic.Input();
-                i.SelfX = rootPos.x; i.SelfZ = rootPos.z; i.FacingX = fwd.x; i.FacingZ = fwd.z;
+                i.SelfX = selfPos.x; i.SelfZ = selfPos.z; i.FacingX = fwd.x; i.FacingZ = fwd.z;
                 i.UserX = userPos.x; i.UserZ = userPos.z; i.AnchorX = _anchorX; i.AnchorZ = _anchorZ;
 
                 string pathNote = "not needed";
@@ -869,19 +890,19 @@ namespace VaMRT
                 float gx, gz; bool clamped; string why;
                 if (FollowLogic.Goal(s, i, out gx, out gz, out clamped, out why))
                 {
-                    Vector3 goal = new Vector3(gx, rootPos.y, gz);
+                    Vector3 goal = new Vector3(gx, selfPos.y, gz);
                     string obstacle;
-                    i.ObstacleDist = ProbePath(rootPos, goal, scale, out obstacle);
+                    i.ObstacleDist = ProbePath(selfPos, goal, scale, out obstacle);
                     i.ObstacleName = obstacle;
                     string gnote; bool known;
-                    bool ok = CheckGround(rootPos, goal, scale, out known, out gnote);
+                    bool ok = CheckGround(selfPos, goal, scale, out known, out gnote);
                     i.GroundKnown = known; i.GroundOk = ok; i.GroundNote = gnote;
                     pathNote = i.ObstacleDist < float.MaxValue ? (obstacle.Length > 0 ? "'" + obstacle + "'" : "obstacle") + " at " + i.ObstacleDist.ToString("0.0") + " m" : "clear";
                     groundNote = !known ? "no floor under her, not checked" : (ok ? "ok" : gnote);
                 }
 
                 FollowLogic.Decision r = FollowLogic.Decide(s, i);
-                float fromCentre = FollowLogic.Dist(rootPos.x, rootPos.z, _anchorX, _anchorZ);
+                float fromCentre = FollowLogic.Dist(selfPos.x, selfPos.z, _anchorX, _anchorZ);
                 _followText.val = "FOLLOW (dry run: nothing is sent, she does not move)\n" +
                                   FollowLogic.Describe(r) + "\n" +
                                   "user " + r.UserDist.ToString("0.0") + " m away (walks when over " + s.MaxDist.ToString("0.0") + " m, stays put under " + s.MinDist.ToString("0.0") + " m)\n" +

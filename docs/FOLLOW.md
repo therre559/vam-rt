@@ -4,8 +4,21 @@ Goal: "walk and talk with me". She keeps within a comfortable distance of the us
 off an edge or out of an allowed area. Time is not the limit; conditions are.
 
 ## Status
-**Dry run only (Senses plugin 0.4.0).** The plugin measures, decides and *reports* what she would do. Nothing is sent and she does not move. This lets
-you verify every rule by walking around before any real movement exists.
+**Dry run only (Senses plugin 0.4.1).** The plugin measures, decides and *reports* what she would do. Nothing is sent and she does not move. This lets
+you verify every rule by walking around before any real movement exists. Her position is measured at her hips (they are what travels when In Place is off).
+Real movement is being tested separately with typed moves: see LIVE_TEST.md.
+
+## What live movement taught us (typed moves, 2026-10-03)
+- She walked into a chair and through it: **VaM's physics does not stop her**, so the obstacle and ground checks must be enforced by us before and during every move.
+- She finishes facing the way she walked, so "face the user on arrival" needs its own step.
+- A walking speed of about 1.0 m/s looks right on Ava (1.2 looks like a jog): the follower's speed should be a setting, ideally scaled to the body.
+- ARDY follows the plans to 2-3 cm, so the remaining error budget is VaM's physics and the lag.
+
+## Why it is not live yet
+ARDY's pose is the end of the chunk it just generated, which VaM plays 2-4 s later, so a command "N m ahead of her" is applied from a pose that is already
+about 3 m ahead of what is on screen while she walks. The live follower needs commands in a frame that does not depend on that lag (the goal as a fixed point in
+the world, with a measured transform between VaM's and ARDY's coordinates) and a feedback file from the stream so the plugin can see what the stream is doing.
+The typed-move test provides the measurements for that.
 
 ## The design in one picture
     Senses plugin (VaM)                                   motion stream (Python)
@@ -63,6 +76,7 @@ The plugin will write it to a small file next to the request file; the stream re
 7. Tell me anything that is wrong. The physics checks (obstacles, ground) are the part that could not be tested outside VaM.
 
 ## Next
+0. Typed moves in VaM (LIVE_TEST.md): real vs intended displacement, latency, physics, looks.
 1. Verify the dry run in VaM (above) and tune the numbers.
 2. The stream side: read the command file, check the lease, convert to the world frame with `Streamer.root_state()` and her heading from her hips,
    plan with `steer_plan`, switch the text between "walks forward" and "stands upright", with a fresh-command watchdog.

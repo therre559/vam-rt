@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.3
+- Typed moves no longer shuffle at the end: a move is done within 25 cm of the goal (was 10 cm) and the text stays "walks forward" until it is done (it used to switch to "stands upright" within
+  0.5 m while the plan still moved her; the log showed her crossing the goal back and forth by about 25 cm for six seconds). Reasoned from the live log, not reproducible offline.
+- Live log notes: limits and speed clamps work; "sit down on the chair" sits in place (no chair under her): walking to a chair is the next feature.
+
+## 0.4.2
+- First live results (docs/LIVE_TEST.md): moves end within 2-3 cm of the goal in ARDY, she walks and turns naturally in VaM, speed changes look natural, but 1.2 m/s looks like a jog,
+  she walks through furniture (the physics does not stop her) and a short first move was followed by a crouch.
+- Stream v22: the move texts are encoded at startup (the first move no longer causes a playback gap), moves default to 1.0 m/s and a gentler 1.0 m/s^2 (`--move-accel`, `/accel`),
+  and every move ends with a result line (from, to, distance, facing).
+
+## 0.4.1
+- **Typed moves** (stream v21): `/walk 3`, `/goto 2 4`, `/go 2 1`, `/home`, `/stop`, `/speed`, `/where` in the stream window make her really walk with the steering planner. Each move ends by
+  itself (arrival within 10 cm, a timeout that brakes and then gives up, `/stop`), the farthest single move is `--max-move` (8 m). New `move_control.py`, tests, and docs/LIVE_TEST.md.
+- The stream knows her facing (from the hips, calibrated once; rolled back with a rolled-back chunk) via `Streamer.root_pose()`.
+- Senses 0.4.1: follow measures her at the **hips** (they travel when In Place is off; the base control stays behind), plus a **Position report** and a "Set origin here" button for
+  comparing real and intended displacement.
+
 ## 0.4.0
 - Senses: **Follow (dry run)**. Reports what she would do to stay within reach of the user: distance band, goal point, obstacles (six physics rays),
   ground ahead, allowed area. Nothing is sent and she does not move. Callable actions *Start follow (dry run)* / *Stop follow (dry run)*.
