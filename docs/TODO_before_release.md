@@ -8,7 +8,7 @@ the scenario's plugin ids read plugin#3 / plugin#1 (the demo scene's).
 Still needed from Lynn:
 1. Done. The 8-bit encoder WITH the Llama 3 prompt header (what `patch_ardy_int8.py` installs) was tested on Lynn's rig 19 Nov:
    works, nothing broken. `ARDY_TEXT_ENCODER_INT8_RAW=1` keeps the older no-header behaviour available.
-2. Done: creator Gingersnap, repo github.com/therre559/vam-rt (create the repo and push this tree; README links point there).
+2. Done: creator Gingersnap559 (the Hub username; VaM's builder uses the creator name from User Preferences), repo github.com/therre559/vam-rt (create the repo and push this tree; README links point there).
 3. Done: the demo scene is Lynn's VaM-saved copy (19 Nov) with her Voxta character/scenario ids stripped and the release defaults
    re-applied. Root cause of the settings not restoring: VaM's storable id for Senses is `plugin#N_VaMRT.Senses` (class name),
    not `VaMRT_Senses` (file name); the first scene used the wrong id.

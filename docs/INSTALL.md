@@ -21,13 +21,13 @@
    First run downloads the models (ARDY ~1 GB, the encoder ~8.5 GB) into the Hugging Face cache.
 
 ## 2. VaM side
-1. Put `VaMRT.NPC.1.var` in `AddonPackages`.
+1. Put `Gingersnap559.VaMRT.1.var` in `AddonPackages`.
 2. Load `VaMRT/VaMRT Demo.json`. It has a stock female, a chair and a bed (plain cubes tagged `[sit]` and `[lie]` — replace them
    with any furniture you like, keep the tags in the atom names), and the plugins wired: Voxta, BVH Player (VaMRT), Senses, Face, VTE.
 3. Voxta plugin on the Person: pick your character / scenario as you normally do.
 4. BVH Player panel: Watch Status should say `[v5.9]` and *Clips loaded* should count up once the stream runs.
 5. Apply whatever look you want to the Person (Appearance Preset). The Face plugin's Status box lists any expression morphs the
-   character lacks; the demo expects AshAuryn's 2022 pack 2 and asco's expressions from the Hub.
+   character lacks; for the best faces install AshAuryn's 2022 Expressions Pack 2 and ascorad's asco Expressions from the Hub - optional; Face finds them by name and falls back to the built-in Genesis morphs without them.
 
 ## 3. Voxta side
 1. Import `voxta/scenario mood v43.json` as a scenario (or paste the `mood` script into your own scenario's Scripts).

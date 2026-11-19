@@ -62,7 +62,7 @@ powershell -NoProfile -Command "$c = Get-Content -Raw '%ROOT%config.example.bat'
 echo   wrote config.bat
 :done
 echo.
-echo Done. Next: put VaMRT.NPC.1.var in VaM's AddonPackages, import the Voxta scenario, then run Start_VaMRT.bat. See docs\INSTALL.md.
+echo Done. Next: put Gingersnap559.VaMRT.1.var in VaM's AddonPackages, import the Voxta scenario, then run Start_VaMRT.bat. See docs\INSTALL.md.
 echo On a second PC for the text encoder: run this same setup.bat there, then Start_Encoder.bat.
 pause
 exit /b 0

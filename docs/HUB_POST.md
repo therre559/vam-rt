@@ -12,9 +12,11 @@ her body live, 0.9 s at a time: "come here" and she walks over, "sit in that cha
   No morph mapping to do: it finds the expression morphs the character has.
 - A demo scene with everything wired, a Voxta scenario (mood model + action inference), a VoxtaTouchElite message pack.
 
+Optional, for the best faces: AshAuryn's 2022 Expressions Pack 2 and ascorad's asco Expressions (Hub). VaMRT_Face finds them by name and falls back to the built-in Genesis 2 morphs without them.
+
 [B]What is NOT in the var (the PC side)[/B]
 The motion model runs outside VaM: NVIDIA ARDY (free weights) plus the VaMRT stream and prompter scripts. One setup.bat installs
-it: [URL]https://github.com/therre559/vam-rt[/URL]. Needs an NVIDIA GPU - 24 GB on one PC, or ~6 GB on the VaM PC plus a second
+it: [URL]https://github.com/therre559/vam-rt[/URL] (downloads incl. this var: [URL]https://github.com/therre559/vam-rt/releases/tag/v1.0[/URL]). Needs an NVIDIA GPU - 24 GB on one PC, or ~6 GB on the VaM PC plus a second
 PC with 10 GB for the text encoder - Miniconda, Git, Voxta, and an OpenRouter key (or a local LLM) for the prompter.
 
 [B]Honest state of things[/B]

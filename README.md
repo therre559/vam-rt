@@ -1,6 +1,6 @@
 # VaMRT — a real-time, AI-driven NPC for Virt-a-Mate
 
-Repo: https://github.com/therre559/vam-rt · Hub package: `VaMRT.NPC` by Gingersnap
+Repo: https://github.com/therre559/vam-rt · Hub package: `Gingersnap559.VaMRT` by Gingersnap559
 
 **Prototype.** She listens (Voxta), decides what to do (an LLM), and *moves* — not from canned animations but from a motion model
 generating her body live, 20 frames a second, from the words of the conversation. She knows what is in the room, walks to the
@@ -30,7 +30,7 @@ Voxta (chat, voice, mood script) ──► motion prompter ──► ARDY stream
 - Miniconda and Git. No compiler, no Hugging Face account.
 
 ## Install
-See [docs/INSTALL.md](docs/INSTALL.md). Short version: `pc\setup.bat` → install `VaMRT.NPC.1.var` → import the Voxta scenario →
+See [docs/INSTALL.md](docs/INSTALL.md). Short version: `pc\setup.bat` → install `Gingersnap559.VaMRT.1.var` → import the Voxta scenario →
 load the demo scene → `pc\Start_VaMRT.bat`.
 
 ## Credits and licences
