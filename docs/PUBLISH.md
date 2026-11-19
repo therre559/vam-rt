@@ -20,8 +20,11 @@ If GitHub Desktop is easier: File -> Clone repository -> therre559/vam-rt; delet
 folder); copy the VaMRT folder's contents in; GitHub Desktop lists the changes; write the summary; Commit to main; Push origin.
 
 ## Building the var (do it in VaM, not by hand)
-The Hub rejected a hand-zipped var ("Error decoding JSON: Syntax error") that decoded fine everywhere else; the var VaM's own
-Package Builder produced was accepted. So, for a rebuild: copy `vam/Gingersnap559.VaMRT.1/Custom` and `.../Saves` into the VaM
+**The Hub's "Error decoding JSON: Syntax error" on upload (19 Nov 2026) was caused by the TEXT FIELDS of meta.json**: a double
+quote, a backslash or a line break inside Description / Credits / Instructions (all legal JSON) makes the Hub's parser fail,
+however the var was zipped. Rule: in those three fields use no quotation marks, no backslashes (write pc/setup.bat, not
+pc\setup.bat) and no Enter. Dependencies (Voxta etc.) were NOT the problem. Hand-zipped vars are fine once the text is clean; the
+Package Builder is still the tidier way to make one. So, for a rebuild: copy `vam/Gingersnap559.VaMRT.1/Custom` and `.../Saves` into the VaM
 folder, and in the copied scene replace every `SELF:/` with `Custom/Scripts/VaMRT/`-style local paths (the builder turns them back
 into `SELF:/`). Set User Preferences -> Creator Name to your Hub username, Package Manager ->
 Package Builder -> Add File (the scene) -> Prep -> Fix fixable references -> Finalize. Script reference option: Latest.

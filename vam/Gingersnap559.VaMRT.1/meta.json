@@ -1,41 +1,37 @@
-{ 
-   "licenseType" : "CC BY", 
-   "creatorName" : "Gingersnap559", 
-   "packageName" : "VaMRT", 
-   "standardReferenceVersionOption" : "Latest", 
-   "scriptReferenceVersionOption" : "Latest", 
-   "description" : "VaMRT - a real-time, AI-driven NPC for VaM (prototype). NVIDIA ARDY generates her motion live from the Voxta conversation: \"come here\", \"sit in that chair\", \"bend over and hold it\" become real movement, not canned clips. VaMRT_Senses tells the AI what is in the room and where you are; VaMRT_Face drives expression, eye contact and head turns from her mood; the BVH Player (VaMRT build) streams the motion into VaM. This package is the VaM side: the three plugins and a wired demo scene. The motion model runs on your PC outside VaM - setup and the Voxta scenario are at the GitHub link.\r\n", 
-   "credits" : "BVH Player: a modified build of ElkVR / VRAdultFun's BVH Player 1.1.3 (CC BY) - streaming reload, chunk blending, world travel, root follow, floor cap. Motion model: NVIDIA ARDY (code Apache-2.0, weights under the NVIDIA Open Model Agreement). ARDY-to-BVH converter: iremoztrk (Apache-2.0). 8-bit text encoder: the Voxta team. Expressions used by VaMRT_Face: AshAuryn and ascorad (Hub). Built on Voxta (AcidBubbles and the Voxta team) and VoxtaTouchElite (FutureStorm). VaMRT_Senses and VaMRT_Face: Gingersnap, MIT.\r\n", 
-   "instructions" : "1) Install this var. 2) PC side: get the repo at the link, run pc\\setup.bat (installs ARDY, the converter and a conda environment; needs an NVIDIA GPU, Miniconda and Git). 3) Voxta: import voxta\\scenario mood v43.json from the repo. 4) Load the scene VaMRT Demo, pick your Voxta character in the Voxta plugin, apply any look you like. 5) Run pc\\Start_VaMRT.bat, then talk to her. Full guide: docs\\INSTALL.md in the repo. Prototype - see docs\\KNOWN_ISSUES.md for what is rough and where help is wanted.\r\n", 
-   "promotionalLink" : "https://github.com/therre559/vam-rt", 
-   "programVersion" : "1.22.0.13", 
-   "contentList" : [ 
-      "Saves/scene/VaMRT/VaMRT Demo.json", 
-      "Custom/Scripts/VaMRT/BVHPlayer_VaMRT.cs", 
-      "Custom/Scripts/VaMRT/VaMRT_Senses.cs", 
+{
+   "licenseType": "CC BY",
+   "creatorName": "Gingersnap559",
+   "packageName": "VaMRT",
+   "standardReferenceVersionOption": "Latest",
+   "scriptReferenceVersionOption": "Latest",
+   "description": "VaMRT - a real-time, AI-driven NPC for VaM (prototype). NVIDIA ARDY generates her motion live from the Voxta conversation: come here, sit in that chair, bend over and hold it become real movement, not canned clips. VaMRT_Senses tells the AI what is in the room and where you are; VaMRT_Face drives expression, eye contact and head turns from her mood; the BVH Player (VaMRT build) streams the motion into VaM. This package is the VaM side: the three plugins and a wired demo scene. The motion model runs on your PC outside VaM - setup and the Voxta scenario are at the GitHub link.",
+   "credits": "BVH Player: a modified build of ElkVR / VRAdultFun BVH Player 1.1.3 (CC BY) - streaming reload, chunk blending, world travel, root follow, floor cap. Motion model: NVIDIA ARDY (code Apache-2.0, weights under the NVIDIA Open Model Agreement). ARDY-to-BVH converter: iremoztrk (Apache-2.0). 8-bit text encoder: the Voxta team. Expressions used by VaMRT_Face: AshAuryn and ascorad (Hub). Built on Voxta (AcidBubbles and the Voxta team) and VoxtaTouchElite (FutureStorm). VaMRT_Senses and VaMRT_Face: Gingersnap559, MIT.",
+   "instructions": "1) Install this var. 2) PC side: get the repo at the link, run pc/setup.bat (installs ARDY, the converter and a conda environment; needs an NVIDIA GPU, Miniconda and Git). 3) Voxta: import voxta/scenario mood v43.json from the repo. 4) Load the scene VaMRT Demo, pick your character in the Voxta plugin on the Person, apply any look you like. 5) Run pc/Start_VaMRT.bat, then talk to her. Full guide: docs/INSTALL.md in the repo. Prototype - see docs/KNOWN_ISSUES.md for what is rough and where help is wanted.",
+   "promotionalLink": "https://github.com/therre559/vam-rt",
+   "programVersion": "1.22.0.13",
+   "contentList": [
+      "Saves/scene/VaMRT/VaMRT Demo.json",
+      "Custom/Scripts/VaMRT/BVHPlayer_VaMRT.cs",
+      "Custom/Scripts/VaMRT/VaMRT_Senses.cs",
       "Custom/Scripts/VaMRT/VaMRT_Face.cs"
-   ], 
-   "dependencies" : { 
-      "AcidBubbles.Voxta.latest" : { 
-         "licenseType" : "CC BY-ND", 
-         "dependencies" : { 
-         }
-      }, 
-      "FutureStorm.VoxtaTouchElite.latest" : { 
-         "licenseType" : "CC BY-SA", 
-         "dependencies" : { 
-         }
-      }, 
-      "NoStage3.Hair_Long_Upswept_Top_Bun.latest" : { 
-         "licenseType" : "CC BY", 
-         "dependencies" : { 
-         }
+   ],
+   "dependencies": {
+      "AcidBubbles.Voxta.latest": {
+         "licenseType": "CC BY-ND",
+         "dependencies": {}
+      },
+      "FutureStorm.VoxtaTouchElite.latest": {
+         "licenseType": "CC BY-SA",
+         "dependencies": {}
+      },
+      "NoStage3.Hair_Long_Upswept_Top_Bun.latest": {
+         "licenseType": "CC BY",
+         "dependencies": {}
       }
-   }, 
-   "customOptions" : { 
-      "preloadMorphs" : "false"
-   }, 
-   "hadReferenceIssues" : "false", 
-   "referenceIssues" : [ 
-   ]
+   },
+   "customOptions": {
+      "preloadMorphs": "false"
+   },
+   "hadReferenceIssues": "false",
+   "referenceIssues": []
 }

@@ -17,3 +17,5 @@ Still needed from Lynn:
 5. `setup.bat` has NOT been run on a clean PC (no second machine available). Say so in the Hub post and ask the first installer to
    report; KNOWN_ISSUES.md carries the fallback.
 6. ROTATE the OpenRouter key that was in Start_ARDY_rh.bat.
+
+7. Hub upload accepted 19 Nov (evening) after the meta.json text fields were stripped of quotes, backslashes and line breaks - see PUBLISH.md.
