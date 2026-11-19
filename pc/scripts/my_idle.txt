@@ -1,0 +1,12 @@
+idle.talk_hands | A person talks while gesturing with their hands.
+idle.talk_hands | A person explains something, moving their hands expressively.
+idle.shrug_tilt | A person shrugs and tilts their head.
+idle.glance_back | A person glances over their shoulder.
+idle.glance_back | A person turns their head to the side and then looks back.
+idle.lean | A person leans to one side and then straightens up.
+idle.pace | A person paces slowly while thinking.
+idle.hair | A person adjusts their hair with one hand.
+idle.arms_cross | A person crosses their arms.
+idle.nod_slow | A person nods slowly.
+idle.listen | A person stands listening, tilting their head.
+idle.fidget | A person tucks their hair behind one ear.

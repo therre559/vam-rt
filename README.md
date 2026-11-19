@@ -1,41 +1,38 @@
-# VaM-RT (working name)
+# VaMRT — a real-time, AI-driven NPC for Virt-a-Mate
 
-Real-time, text-driven character motion for Virt-A-Mate, with the goal of NPCs that decide what to do instead of playing fixed animations.
+Repo: https://github.com/therre559/vam-rt · Hub package: `VaMRT.NPC` by Gingersnap
 
-**Status: working prototype, moving towards autonomy.** Voxta turns what you say into an action request, a small Python server turns that into a motion
-prompt for NVIDIA's ARDY model, and a VaM plugin plays the generated BVH. A second plugin (Senses) tells the character about her surroundings and
-reports what she would do to stay near you. See docs/ARCHITECTURE.md for the whole picture and where it is going.
+**Prototype.** She listens (Voxta), decides what to do (an LLM), and *moves* — not from canned animations but from a motion model
+generating her body live, 20 frames a second, from the words of the conversation. She knows what is in the room, walks to the
+chair you point at and sits in it the right way round, holds a pose when asked, lies down on the bed, looks at you, and her face
+follows her mood. It is rough in places (see KNOWN_ISSUES.md). It is published so people who know VaM's internals better than we
+do can take it further.
 
-## What works today
-- **Voice-driven body motion:** Voxta action -> motion prompter (fast path or LLM, every movement gets a lifetime) -> ARDY stream -> BVH Player.
-- **Senses plugin:** a short text description of the world (her pose, you, nearby chairs and tables) written to Voxta's context; events (you approach,
-  leave, stare) sent to Voxta without interrupting conversations; reactions that call any plugin action (for example a Timeline clip); optional
-  E-Motion mood. Docs: docs/SENSES.md.
-- **Nothing runs forever:** durations are enforced in the prompter, the stream and the player. Docs: docs/DURATIONS.md.
-- **Locomotion groundwork:** ARDY follows root paths almost exactly; a steering planner makes her turn and walk forward to any goal; a standalone
-  probe measures it. Docs: docs/LOCOMOTION.md.
-- **Follow (dry run):** reports what she would do to stay within reach of you (distance, obstacles, ground, allowed area). She does not move yet.
-  Docs: docs/FOLLOW.md.
-- **Typed moves:** `/walk 3`, `/goto 2 4`, `/home`, `/stop` in the stream window make her really walk, to test the whole chain before a live follower.
-  Docs: docs/LIVE_TEST.md.
+## What is in the box
+```
+Voxta (chat, voice, mood script) ──► motion prompter ──► ARDY stream ──► BVH ──► BVH Player (VaM)
+       ▲          │ mood / face cues                         ▲ world file (what is where)
+       │          ▼                                          │
+  VoxtaTouchElite  VaMRT_Face (expression, gaze)        VaMRT_Senses (room, objects, you)
+```
+- **NVIDIA ARDY** — the motion model. Text in, skeleton out, real time ([paper](https://research.nvidia.com/labs/sil/projects/ardy/), [code](https://github.com/nv-tlabs/ardy), NVIDIA Open Model Agreement).
+- **ardy2bvh** ([iremoztrk/ardy2bvh](https://github.com/iremoztrk/ardy2bvh), Apache-2.0) — ARDY's `.npz` to BVH; and the Voxta team's [8-bit text encoder](https://huggingface.co/voxta/Llama-3-8B-LLM2Vec-ARDY-INT8) (8 GB instead of 15, no gated repo).
+- **ARDY stream** (`pc/scripts/ardy_stream.py`) — runs ARDY as a receding-horizon stream, 0.9 s chunks, and writes BVH VaM can play. Freeze-holds poses ("bend over and hold it"), walks her to points in VaM coordinates with a learned frame link, turns before walking, keeps her on the floor, lifts her onto a bed.
+- **Motion prompter** (`motion_prompter.py` + `world_moves.py`, `mood_style.py`, `idle_life.py`) — turns Voxta's action requests and her own *stage directions* into motion prompts; plans walks round furniture; idle life between requests.
+- **BVH Player (VaMRT build)** — ElkVR/VRAdultFun's player with auto-reload of a stream, chunk blending, in-place / world travel, a root control that follows her, a bounded stay-on-floor.
+- **VaMRT_Senses** — tells Voxta (and the stream) what is in the room: tagged objects (`[sit]`, `[lie]`), where you are, where she is.
+- **VaMRT_Face** — her resting expression from six mood axes, passing expressions from her own words, eye contact and head turns.
+- **Voxta scenario script** — the mood model (warmth, irritation, energy, comfort, hurt, arousal), action inference, voice-style tags, narration parsing.
 
-## Layout
-- plugin/   the VaM side (C#). plugin/VaMRT is the Senses plugin; plugin/legacy holds the patched BVH Player we run today; plugin/tests compile-checks the plugin outside VaM.
-- server/   the generator side (Python): stream, prompter, lab, planners, probe, launchers, tests.
-- voxta/    the Voxta character card and scenario used for testing.
-- docs/     design notes and findings.
-- tools/    helper scripts (deploy.bat copies the files into VaM and ARDY).
-- CHANGELOG.md, CREDITS.md
+## Requirements
+- Windows, VaM 1.22, Voxta (with the VaM plugin), an NVIDIA GPU: **24 GB** on one PC, or 8 GB + a second PC/GPU with 10 GB for the text encoder.
+- An LLM endpoint for the prompter (OpenRouter key, or a local KoboldCpp / LM Studio). Voxta brings its own LLM and TTS.
+- Miniconda and Git. No compiler, no Hugging Face account.
 
-## Requirements (not included)
-Virt-A-Mate, the Voxta server and its VaM plugin, NVIDIA ARDY with its model weights, a CUDA GPU, and an LLM endpoint for the prompt writer (any
-OpenAI-compatible server; we use KoboldCpp). Optional: the E-Motion, Glance and Timeline plugins.
+## Install
+See [docs/INSTALL.md](docs/INSTALL.md). Short version: `pc\setup.bat` → install `VaMRT.NPC.1.var` → import the Voxta scenario →
+load the demo scene → `pc\Start_VaMRT.bat`.
 
-## Install and update
-1. Edit the two paths at the top of tools/deploy.bat for your machine, then run it. It copies the plugins into VaM and the scripts into ARDY's scripts folder.
-2. Restart the stream and the prompter (the launchers in server/), and reload the plugins in VaM.
-
-## Tests
-Offline, no GPU and no VaM needed (the plugin check needs Mono). See docs/TESTING.md for the commands; each ends with "ALL GOOD".
-
-See CREDITS.md for licenses and attribution.
+## Credits and licences
+Scripts and plugins in this repo: MIT (see LICENSE). BVH Player: based on ElkVR / VRAdultFun 1.1.3, CC BY. ARDY: NVIDIA.
+Expressions in the demo: AshAuryn, ascorad (VaM Hub). Built with a lot of help from Claude.

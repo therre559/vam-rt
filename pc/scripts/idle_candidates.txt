@@ -1,0 +1,25 @@
+# Quiet idle candidates for the motion lab. Run, with the stream and VaM up (Start_Lab.bat):
+#   python scripts\ardy_lab.py --prompts scripts\idle_candidates.txt --seconds 5
+# Rate what looks natural AND small (g = good). Each group you accept becomes a new idle ("idle.<name>") the prompter uses
+# straight away: anything rated good is written to verified_prompts.json. One wording per group is kept.
+# The point is quantity of QUIET motions: a dozen small things beat four big ones.
+idle.breath | A person takes a deep breath and exhales slowly.
+idle.breath | A person sighs.
+idle.neck | A person rubs the back of their neck.
+idle.neck | A person tilts their head from side to side.
+idle.head_scratch | A person scratches their head.
+idle.nails | A person looks at their fingernails.
+idle.hands_back | A person clasps their hands behind their back.
+idle.hands_front | A person clasps their hands in front of them.
+idle.look_down | A person looks down at their feet.
+idle.look_up | A person looks up at the ceiling.
+idle.look_away | A person looks away to one side.
+idle.hip | A person puts one hand on their hip.
+idle.arm_rub | A person rubs their upper arm with the other hand.
+idle.chin | A person touches their chin thoughtfully.
+idle.weight | A person shifts their weight onto one leg.
+idle.foot | A person taps one foot on the floor.
+idle.yawn | A person yawns and covers their mouth.
+idle.wipe | A person brushes something off their sleeve.
+idle.ear | A person tucks their hair behind their ear.
+idle.wrist | A person checks the time on their wrist.

@@ -1,0 +1,20 @@
+{
+  "dance.energetic": "A person dances energetically.",
+  "dance.graceful": "A person dances with smooth, elegant movements.",
+  "dance.plain": "A person dances.",
+  "dance.playful": "A person dances in a silly, playful way.",
+  "dance.sexy": "A person dances seductively.",
+  "dance.slow": "A person dances slowly.",
+  "idle.arms_cross": "A person crosses their arms.",
+  "idle.glance_back": "A person glances over their shoulder.",
+  "idle.hair": "A person adjusts their hair with one hand.",
+  "idle.listen": "A person stands listening, tilting their head.",
+  "idle.look": "A person looks to the left and then to the right.",
+  "idle.look_around": "A person looks around.",
+  "idle.nod_slow": "A person nods slowly.",
+  "idle.pace": "A person paces slowly while thinking.",
+  "idle.shoulders": "A person rolls their shoulders.",
+  "idle.shrug_tilt": "A person shrugs and tilts their head.",
+  "idle.stretch": "A person stretches their arms above their head.",
+  "idle.talk_hands": "A person explains something, moving their hands expressively."
+}

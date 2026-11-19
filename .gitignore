@@ -1,23 +1,5 @@
-# Python
+pc/config.bat
+pc/work/
+pc/ardy/
+pc/ardy2bvh/
 __pycache__/
-*.pyc
-# Generated motion + runtime files
-*.bvh
-*.npz
-metrics.tsv
-prompt.txt
-ardy_request.json
-ardy_control.json
-*.log
-# Probe output (constraint_probe.py)
-probe_*.csv
-probe_bvh/
-# Third-party packages and models: do not redistribute
-*.var
-*.safetensors
-*.pt
-*.ckpt
-*.onnx
-# Local settings / secrets
-.env
-*.local.bat

@@ -1,0 +1,435 @@
+{
+  "A person adjusts their hair with one hand.": {
+    "avg": 0.135,
+    "group": "idle.arms",
+    "max": 0.198,
+    "min_y": 0.979,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:09"
+  },
+  "A person belly dances.": {
+    "avg": 0.275,
+    "group": "dance.sexy",
+    "max": 0.439,
+    "min_y": 0.871,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:50"
+  },
+  "A person crosses their arms.": {
+    "avg": 0.125,
+    "group": "idle.arms",
+    "max": 0.27,
+    "min_y": 0.951,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:07"
+  },
+  "A person dances a waltz.": {
+    "avg": 0.321,
+    "group": "dance.waltz",
+    "max": 0.538,
+    "min_y": 0.836,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 22:07"
+  },
+  "A person dances ballet.": {
+    "avg": 0.031,
+    "group": "dance.ballet",
+    "max": 0.046,
+    "min_y": 1.007,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 22:07"
+  },
+  "A person dances disco.": {
+    "avg": 0.408,
+    "group": "dance.disco",
+    "max": 0.585,
+    "min_y": 0.849,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 22:06"
+  },
+  "A person dances energetically.": {
+    "avg": 0.501,
+    "group": "dance.energetic",
+    "max": 0.891,
+    "min_y": 0.861,
+    "rating": "good",
+    "when": "2026-10-01 15:33"
+  },
+  "A person dances gracefully.": {
+    "avg": 0.633,
+    "group": "dance.graceful",
+    "max": 0.795,
+    "min_y": 0.824,
+    "rating": "ok",
+    "when": "2026-10-01 15:36"
+  },
+  "A person dances hip hop.": {
+    "avg": 0.612,
+    "group": "dance.hiphop",
+    "max": 0.749,
+    "min_y": 0.919,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 22:03"
+  },
+  "A person dances in a silly, playful way.": {
+    "avg": 0.413,
+    "group": "dance.playful",
+    "max": 0.473,
+    "min_y": 0.83,
+    "rating": "good",
+    "when": "2026-10-01 15:35"
+  },
+  "A person dances like a go-go dancer.": {
+    "avg": 0.25,
+    "group": "dance.sexy",
+    "max": 0.459,
+    "min_y": 0.834,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:52"
+  },
+  "A person dances playfully.": {
+    "avg": 0.532,
+    "group": "dance.playful",
+    "max": 0.691,
+    "min_y": 0.888,
+    "rating": "good",
+    "when": "2026-10-01 15:35"
+  },
+  "A person dances salsa, moving their hips.": {
+    "avg": 0.729,
+    "group": "dance.sexy",
+    "max": 0.792,
+    "min_y": 0.897,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:51"
+  },
+  "A person dances salsa.": {
+    "avg": 0.685,
+    "group": "dance.salsa",
+    "max": 0.846,
+    "min_y": 0.853,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 22:02"
+  },
+  "A person dances seductively.": {
+    "avg": 0.119,
+    "group": "dance.sexy",
+    "max": 0.253,
+    "min_y": 0.984,
+    "rating": "ok",
+    "when": "2026-10-01 15:31"
+  },
+  "A person dances sensually.": {
+    "avg": 0.054,
+    "group": "dance.sexy",
+    "max": 0.108,
+    "min_y": 0.898,
+    "rating": "bad",
+    "when": "2026-10-01 15:29"
+  },
+  "A person dances sexily, moving their hips.": {
+    "avg": 0.096,
+    "group": "dance.sexy",
+    "max": 0.298,
+    "min_y": 0.876,
+    "rating": "bad",
+    "when": "2026-10-01 15:30"
+  },
+  "A person dances slowly and sensually, swaying their hips.": {
+    "avg": 0.056,
+    "group": "dance.sexy",
+    "max": 0.073,
+    "min_y": 0.999,
+    "rating": "bad",
+    "when": "2026-10-01 15:32"
+  },
+  "A person dances slowly.": {
+    "avg": 0.311,
+    "group": "dance.slow",
+    "max": 0.517,
+    "min_y": 0.782,
+    "rating": "ok",
+    "when": "2026-10-01 15:32"
+  },
+  "A person dances to Latin music, moving their hips.": {
+    "avg": 0.478,
+    "group": "dance.sexy",
+    "max": 0.631,
+    "min_y": 0.904,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:52"
+  },
+  "A person dances to a slow song.": {
+    "avg": 0.142,
+    "group": "dance.slow",
+    "max": 0.317,
+    "min_y": 0.886,
+    "rating": "bad",
+    "when": "2026-10-01 15:33"
+  },
+  "A person dances wildly.": {
+    "avg": 0.91,
+    "group": "dance.energetic",
+    "max": 1.145,
+    "min_y": 0.918,
+    "rating": "good",
+    "when": "2026-10-01 15:34"
+  },
+  "A person dances with fast, energetic movements.": {
+    "avg": 0.45,
+    "group": "dance.energetic",
+    "max": 0.617,
+    "min_y": 0.869,
+    "rating": "ok",
+    "when": "2026-10-01 15:34"
+  },
+  "A person dances with smooth, elegant movements.": {
+    "avg": 0.535,
+    "group": "dance.graceful",
+    "max": 0.674,
+    "min_y": 0.828,
+    "rating": "good",
+    "when": "2026-10-01 15:36"
+  },
+  "A person dances with smooth, flowing hip movements.": {
+    "avg": 0.019,
+    "group": "dance.sexy",
+    "max": 0.02,
+    "min_y": 1.001,
+    "rating": "dead",
+    "when": "2026-10-01 15:31"
+  },
+  "A person dances with their arms raised, rotating their hips.": {
+    "avg": 0.387,
+    "group": "dance.sexy",
+    "max": 0.498,
+    "min_y": 0.803,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:56"
+  },
+  "A person dances, moving their hips from side to side and raising their arms above their head.": {
+    "avg": 0.285,
+    "group": "dance.sexy",
+    "max": 0.395,
+    "min_y": 0.933,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:53"
+  },
+  "A person dances, rolling their hips in circles.": {
+    "avg": 0.27,
+    "group": "dance.sexy",
+    "max": 0.42,
+    "min_y": 0.864,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:51"
+  },
+  "A person dances, stepping from side to side and turning around slowly.": {
+    "avg": 0.538,
+    "group": "dance.sexy",
+    "max": 0.643,
+    "min_y": 0.846,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:54"
+  },
+  "A person dances, swinging their hips from side to side.": {
+    "avg": 0.114,
+    "group": "dance.sexy",
+    "max": 0.14,
+    "min_y": 0.935,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-25 21:50"
+  },
+  "A person dances.": {
+    "avg": 0.474,
+    "group": "dance.plain",
+    "max": 0.608,
+    "min_y": 0.916,
+    "rating": "good",
+    "when": "2026-10-01 15:28"
+  },
+  "A person does a sexy dance, swaying their hips from side to side.": {
+    "avg": 0.019,
+    "group": "dance.sexy",
+    "max": 0.02,
+    "min_y": 0.996,
+    "rating": "dead",
+    "when": "2026-10-01 15:31"
+  },
+  "A person explains something, moving their hands expressively.": {
+    "avg": 0.058,
+    "group": "idle.talk_hands",
+    "max": 0.081,
+    "min_y": 0.928,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:14"
+  },
+  "A person glances over their shoulder.": {
+    "avg": 0.075,
+    "group": "idle.glance_back",
+    "max": 0.155,
+    "min_y": 0.92,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:15"
+  },
+  "A person leans to one side and then straightens up.": {
+    "avg": 0.01,
+    "group": "idle.lean",
+    "max": 0.015,
+    "min_y": 0.972,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:16"
+  },
+  "A person looks around.": {
+    "avg": 0.079,
+    "group": "idle.look",
+    "max": 0.14,
+    "min_y": 0.969,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:06"
+  },
+  "A person looks to the left and then to the right.": {
+    "avg": 0.024,
+    "group": "idle.look",
+    "max": 0.031,
+    "min_y": 0.966,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:07"
+  },
+  "A person nods slowly.": {
+    "avg": 0.014,
+    "group": "idle.nod_slow",
+    "max": 0.023,
+    "min_y": 0.974,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:17"
+  },
+  "A person paces slowly while thinking.": {
+    "avg": 0.027,
+    "group": "idle.pace",
+    "max": 0.11,
+    "min_y": 0.972,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:17"
+  },
+  "A person puts their hands on their hips.": {
+    "avg": 0.009,
+    "group": "idle.arms",
+    "max": 0.011,
+    "min_y": 0.948,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:08"
+  },
+  "A person rolls their shoulders.": {
+    "avg": 0.026,
+    "group": "idle.stretch",
+    "max": 0.059,
+    "min_y": 0.974,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:10"
+  },
+  "A person shifts their weight from one foot to the other.": {
+    "avg": 0.007,
+    "group": "idle.shift",
+    "max": 0.009,
+    "min_y": 0.966,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:05"
+  },
+  "A person shrugs and tilts their head.": {
+    "avg": 0.119,
+    "group": "idle.shrug_tilt",
+    "max": 0.282,
+    "min_y": 0.917,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:14"
+  },
+  "A person stands listening, tilting their head.": {
+    "avg": 0.066,
+    "group": "idle.listen",
+    "max": 0.117,
+    "min_y": 0.971,
+    "rating": "ok",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:18"
+  },
+  "A person stretches their arms above their head.": {
+    "avg": 0.104,
+    "group": "idle.stretch",
+    "max": 0.19,
+    "min_y": 0.979,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:10"
+  },
+  "A person sways gently while standing.": {
+    "avg": 0.009,
+    "group": "idle.shift",
+    "max": 0.011,
+    "min_y": 0.966,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:06"
+  },
+  "A person sways slowly from side to side.": {
+    "avg": 0.009,
+    "group": "dance.slow",
+    "max": 0.011,
+    "min_y": 0.966,
+    "rating": "dead",
+    "when": "2026-10-01 15:32"
+  },
+  "A person talks while gesturing with their hands.": {
+    "avg": 0.058,
+    "group": "idle.talk_hands",
+    "max": 0.099,
+    "min_y": 0.935,
+    "rating": "good",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:13"
+  },
+  "A person tucks their hair behind one ear.": {
+    "avg": 0.111,
+    "group": "idle.fidget",
+    "max": 0.183,
+    "min_y": 0.972,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:18"
+  },
+  "A person turns their head to the side and then looks back.": {
+    "avg": 0.201,
+    "group": "idle.glance_back",
+    "max": 0.298,
+    "min_y": 0.59,
+    "rating": "bad",
+    "settings": "model=default horizon=40 history=40 steps=10 cfg_text=3",
+    "when": "2026-10-08 17:16"
+  }
+}
